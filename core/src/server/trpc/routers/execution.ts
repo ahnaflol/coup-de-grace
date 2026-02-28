@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../index";
 import { plans, tasks, agentEvents } from "../../db/schema";
-import { eq, gt } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { tracked } from "@trpc/server";
 import { orchestrate } from "../../agents/orchestrator";
 import { agentEventEmitter, type AgentEvent } from "../../agents/events";
@@ -10,12 +10,21 @@ export const executionRouter = router({
   start: publicProcedure
     .input(z.object({ planId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const plan = await ctx.db.query.plans.findFirst({
-        where: eq(plans.id, input.planId),
-      });
-      if (!plan) throw new Error("Plan not found");
-      if (plan.status !== "approved") {
-        throw new Error("Plan must be approved before execution");
+      const [locked] = await ctx.db
+        .update(plans)
+        .set({ status: "executing", updatedAt: new Date() })
+        .where(and(eq(plans.id, input.planId), eq(plans.status, "approved")))
+        .returning({ id: plans.id });
+
+      if (!locked) {
+        const plan = await ctx.db.query.plans.findFirst({
+          where: eq(plans.id, input.planId),
+          columns: { id: true, status: true },
+        });
+        if (!plan) throw new Error("Plan not found");
+        throw new Error(
+          `Plan must be approved before execution (current status: ${plan.status})`
+        );
       }
 
       // Fire-and-forget

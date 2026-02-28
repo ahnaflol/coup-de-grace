@@ -2,7 +2,7 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import Browserbase from "@browserbasehq/sdk";
 import { db } from "../db";
 import { tasks, agentEvents } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { emitAgentEvent } from "./events";
 
@@ -65,14 +65,17 @@ export async function runAgent(taskId: string, instruction: string) {
     });
 
     // Mark task completed
-    await db
+    const [completedRow] = await db
       .update(tasks)
       .set({
         status: "completed",
         result: result,
         completedAt: new Date(),
       })
-      .where(eq(tasks.id, taskId));
+      .where(and(eq(tasks.id, taskId), eq(tasks.status, "running")))
+      .returning({ id: tasks.id });
+
+    if (!completedRow) return;
 
     // Emit completed event
     const completedEvent = {
@@ -88,14 +91,17 @@ export async function runAgent(taskId: string, instruction: string) {
     const errorMessage = err instanceof Error ? err.message : String(err);
 
     // Mark task failed
-    await db
+    const [failedRow] = await db
       .update(tasks)
       .set({
         status: "failed",
         result: { error: errorMessage },
         completedAt: new Date(),
       })
-      .where(eq(tasks.id, taskId));
+      .where(and(eq(tasks.id, taskId), eq(tasks.status, "running")))
+      .returning({ id: tasks.id });
+
+    if (!failedRow) return;
 
     // Emit error + failed events
     const errorEvent = {

@@ -1,0 +1,1 @@
+export const ORCHESTRATOR_MAX_PARALLEL_TASKS = 10;

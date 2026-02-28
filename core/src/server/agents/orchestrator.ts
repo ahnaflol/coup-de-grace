@@ -2,6 +2,8 @@ import { db } from "../db";
 import { plans, tasks } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { runAgent } from "./runner";
+import { stopAllRunningTasks } from "./stop";
+import { ORCHESTRATOR_MAX_PARALLEL_TASKS } from "./config";
 
 interface PlanContent {
   title: string;
@@ -10,6 +12,10 @@ interface PlanContent {
 
 export async function orchestrate(planId: string) {
   try {
+    await stopAllRunningTasks({
+      reason: `Stopped due to plan ${planId} starting execution`,
+    });
+
     // Fetch plan
     const plan = await db.query.plans.findFirst({
       where: eq(plans.id, planId),
@@ -39,10 +45,16 @@ export async function orchestrate(planId: string) {
       .set({ status: "executing", updatedAt: new Date() })
       .where(eq(plans.id, planId));
 
-    // Run all agents in parallel
-    const results = await Promise.allSettled(
-      taskRecords.map((task) => runAgent(task.id, task.instruction))
-    );
+    const maxParallel = ORCHESTRATOR_MAX_PARALLEL_TASKS;
+    const results: PromiseSettledResult<unknown>[] = [];
+
+    for (let i = 0; i < taskRecords.length; i += maxParallel) {
+      const batch = taskRecords.slice(i, i + maxParallel);
+      const batchResults = await Promise.allSettled(
+        batch.map((task) => runAgent(task.id, task.instruction))
+      );
+      results.push(...batchResults);
+    }
 
     // Determine final plan status
     const anyFailed = results.some((r) => r.status === "rejected");
@@ -61,7 +73,7 @@ export async function orchestrate(planId: string) {
       .update(plans)
       .set({ status: finalStatus, updatedAt: new Date() })
       .where(eq(plans.id, planId));
-  } catch (err) {
+  } catch {
     await db
       .update(plans)
       .set({ status: "failed", updatedAt: new Date() })
