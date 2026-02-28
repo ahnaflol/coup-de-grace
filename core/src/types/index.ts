@@ -1,4 +1,4 @@
-export type PlanningStep = "prompt" | "thinking" | "interview" | "plan-revealed" | "review";
+export type PlanningStep = "prompt" | "thinking" | "review";
 
 export interface ChatMessage {
   id: string;

@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@ai-sdk/mistral": "^2.0.25",
+    "@ai-sdk/openai": "^3.0.37",
+    "@ai-sdk/react": "^3.0.107",
     "@tanstack/react-query": "^5.90.21",
     "@trpc/client": "^11.10.0",
     "@trpc/react-query": "^11.10.0",
@@ -30,6 +32,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-dropzone": "^15.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "shadcn": "^3.8.5",
     "sonner": "^2.0.7",
     "superjson": "^2.2.6",

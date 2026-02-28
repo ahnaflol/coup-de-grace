@@ -2,15 +2,13 @@ import type { PlanningStep, TaskStatus, ThoughtAnimationVariant } from "@/types"
 
 export const PLANNING_STEPS: { id: PlanningStep; label: string }[] = [
   { id: "prompt", label: "Describe" },
-  { id: "thinking", label: "Configure" },
+  { id: "thinking", label: "Plan" },
   { id: "review", label: "Review" },
 ];
 
 export const PLANNING_STEP_MAPPING: Record<PlanningStep, PlanningStep> = {
   prompt: "prompt",
   thinking: "thinking",
-  interview: "thinking",
-  "plan-revealed": "thinking",
   review: "review",
 };
 
