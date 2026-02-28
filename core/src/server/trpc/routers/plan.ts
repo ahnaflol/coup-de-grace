@@ -1,0 +1,88 @@
+import { z } from "zod";
+import { router, publicProcedure } from "../index";
+import { plans } from "../../db/schema";
+import { eq } from "drizzle-orm";
+import { anthropic } from "@ai-sdk/anthropic";
+import { generateText } from "ai";
+
+const planSchema = z.object({
+  title: z.string(),
+  tasks: z.array(
+    z.object({
+      title: z.string(),
+      instruction: z.string(),
+    })
+  ),
+});
+
+export const planRouter = router({
+  get: publicProcedure
+    .input(z.object({ planId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const plan = await ctx.db.query.plans.findFirst({
+        where: eq(plans.id, input.planId),
+        with: { tasks: true },
+      });
+      return plan ?? null;
+    }),
+
+  approve: publicProcedure
+    .input(z.object({ planId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const [updated] = await ctx.db
+        .update(plans)
+        .set({ status: "approved", updatedAt: new Date() })
+        .where(eq(plans.id, input.planId))
+        .returning();
+      return updated;
+    }),
+
+  requestChanges: publicProcedure
+    .input(
+      z.object({
+        planId: z.string(),
+        feedback: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const existing = await ctx.db.query.plans.findFirst({
+        where: eq(plans.id, input.planId),
+      });
+      if (!existing) throw new Error("Plan not found");
+
+      const { text } = await generateText({
+        model: anthropic("claude-sonnet-4-20250514"),
+        system: `You are a test planning assistant. You previously generated the following test plan:
+
+${existing.content}
+
+The user wants changes. Regenerate the plan incorporating their feedback.
+
+Output ONLY valid JSON with this exact shape:
+{
+  "title": "Short plan title",
+  "tasks": [
+    {
+      "title": "Short task title",
+      "instruction": "Detailed step-by-step instruction for the browser agent"
+    }
+  ]
+}`,
+        prompt: input.feedback,
+      });
+
+      const parsed = planSchema.parse(JSON.parse(text));
+
+      const [updated] = await ctx.db
+        .update(plans)
+        .set({
+          content: JSON.stringify(parsed),
+          status: "draft",
+          updatedAt: new Date(),
+        })
+        .where(eq(plans.id, input.planId))
+        .returning();
+
+      return { ...updated, parsed };
+    }),
+});

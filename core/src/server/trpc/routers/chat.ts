@@ -1,0 +1,79 @@
+import { z } from "zod";
+import { router, publicProcedure } from "../index";
+import { sessions, plans } from "../../db/schema";
+import { anthropic } from "@ai-sdk/anthropic";
+import { generateText } from "ai";
+
+const planSchema = z.object({
+  title: z.string(),
+  tasks: z.array(
+    z.object({
+      title: z.string(),
+      instruction: z.string(),
+    })
+  ),
+});
+
+const SYSTEM_PROMPT = `You are a test planning assistant for a computer-use agent (CUA) platform. Given a user's message describing what to test on a website, generate a structured test plan.
+
+Output ONLY valid JSON with this exact shape:
+{
+  "title": "Short plan title",
+  "tasks": [
+    {
+      "title": "Short task title",
+      "instruction": "Detailed step-by-step instruction for the browser agent to execute this test"
+    }
+  ]
+}
+
+Rules:
+- Each task should be independently executable by a browser agent
+- Instructions should be specific and actionable (click, type, navigate, verify, etc.)
+- Keep tasks focused - one logical test per task
+- Include the target URL in each task's instruction if relevant
+- No markdown, no explanation, just the JSON`;
+
+export const chatRouter = router({
+  sendMessage: publicProcedure
+    .input(
+      z.object({
+        sessionId: z.string().optional(),
+        message: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Create session if needed
+      let sessionId = input.sessionId;
+      if (!sessionId) {
+        const [session] = await ctx.db
+          .insert(sessions)
+          .values({ title: input.message.slice(0, 100) })
+          .returning();
+        sessionId = session.id;
+      }
+
+      // Generate plan with Claude
+      const { text } = await generateText({
+        model: anthropic("claude-sonnet-4-20250514"),
+        system: SYSTEM_PROMPT,
+        prompt: input.message,
+      });
+
+      // Parse and validate
+      const parsed = planSchema.parse(JSON.parse(text));
+
+      // Persist plan
+      const [plan] = await ctx.db
+        .insert(plans)
+        .values({
+          sessionId,
+          userPrompt: input.message,
+          content: JSON.stringify(parsed),
+          status: "draft",
+        })
+        .returning();
+
+      return { sessionId, plan: { ...plan, parsed } };
+    }),
+});
