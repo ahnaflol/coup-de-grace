@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { PLANNING_STEPS } from "@/lib/constants";
+import { PLANNING_STEPS, PLANNING_STEP_MAPPING } from "@/lib/constants";
 import type { PlanningStep } from "@/types";
 import { Check } from "lucide-react";
 
@@ -11,13 +11,14 @@ interface PhaseStepperProps {
 }
 
 export function PhaseStepper({ currentStep, onStepClick }: PhaseStepperProps) {
-  const currentIndex = PLANNING_STEPS.findIndex((s) => s.id === currentStep);
+  const mappedStep = PLANNING_STEP_MAPPING[currentStep] ?? currentStep;
+  const currentIndex = PLANNING_STEPS.findIndex((s) => s.id === mappedStep);
 
   return (
     <div className="flex items-center gap-2">
       {PLANNING_STEPS.map((step, index) => {
         const isCompleted = index < currentIndex;
-        const isCurrent = step.id === currentStep;
+        const isCurrent = index === currentIndex;
         const isClickable = isCompleted && onStepClick;
 
         return (
