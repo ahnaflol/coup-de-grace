@@ -62,6 +62,7 @@ function PlanProposalCard({ plan }: { plan: Plan }) {
 
 export function ChatInterface({ planId, onAccept }: ChatInterfaceProps) {
   const router = useRouter();
+  const utils = trpc.useUtils();
   const planQuery = trpc.plan.get.useQuery(
     { planId: planId ?? "" },
     { enabled: Boolean(planId) },
@@ -120,6 +121,7 @@ export function ChatInterface({ planId, onAccept }: ChatInterfaceProps) {
         feedback: content,
       });
       setPlan(updated.parsed);
+      await utils.plan.get.invalidate();
 
       const assistantMessage: ChatMessageType = {
         id: crypto.randomUUID(),
