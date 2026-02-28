@@ -102,19 +102,28 @@ function ResultsPanel({ result }: { result: unknown }) {
 
   return (
     <div className="space-y-5 p-4">
-      {outcome && (
+      {isSuccess !== null && (
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-zinc-400">Outcome</span>
-          <Badge
-            variant={outcome === "pass" ? "default" : "destructive"}
-            className="capitalize"
-          >
-            {outcome}
+          <span className="text-sm font-medium text-zinc-400">Browser session</span>
+          <Badge variant={isSuccess ? "default" : "destructive"}>
+            {isSuccess ? "Completed" : "Error"}
           </Badge>
-          {isSuccess !== null && (
-            <Badge variant={isSuccess ? "default" : "destructive"}>
-              {isSuccess ? "Success" : "Failed"}
+        </div>
+      )}
+
+      {outcome && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-zinc-400">Agent task verdict</span>
+            <Badge
+              variant={outcome === "pass" ? "default" : "destructive"}
+              className="capitalize"
+            >
+              {outcome}
             </Badge>
+          </div>
+          {outcome === "fail" && reason && (
+            <p className="text-sm text-red-400/80 leading-relaxed">{reason}</p>
           )}
         </div>
       )}
@@ -140,7 +149,7 @@ function ResultsPanel({ result }: { result: unknown }) {
         </div>
       )}
 
-      {reason && (
+      {reason && outcome !== "fail" && (
         <div className="space-y-1">
           <p className="text-sm font-medium text-zinc-200">Reason</p>
           <p className="text-sm text-zinc-400 leading-relaxed">{reason}</p>

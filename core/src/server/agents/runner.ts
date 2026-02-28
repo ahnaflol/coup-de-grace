@@ -165,7 +165,8 @@ export async function runAgent(input: {
       sequenceNum: sequenceNum++,
     });
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
+    const errorMessage =
+      err instanceof Error ? err.message : String(JSON.stringify(err, null, 2));
     console.error(
       `[runner] Agent failed | taskId=${taskId} error=${errorMessage}`,
     );
