@@ -10,14 +10,12 @@ const SYSTEM_PROMPT = `You are a test planning assistant for a computer-use agen
 Output ONLY valid JSON with this exact shape:
 {
   "title": "Short plan title",
-  "url": "https://target-site.com",
+  "startUrl": "https://target-site.com",
   "credentials": { "email": "user@example.com", "password": "secret" },
   "tasks": [
     {
       "title": "Short task name",
-      "description": "What this task tests",
-      "hint": "Optional agent nudge (omit if not needed)",
-      "url": "https://target-site.com/specific-page (omit to use plan url)",
+      "startUrl": "https://target-site.com/specific-page (omit to use plan startUrl)",
       "instruction": "Detailed step-by-step instruction for the browser agent"
     }
   ]
@@ -29,7 +27,7 @@ Rules:
 - Keep tasks focused - one logical test per task
 - If the user requests testing across N sessions (e.g. "across 5 user sessions"), output N tasks (one per session) when feasible. Make each task explicitly start from a fresh session and label them "Session 1", "Session 2", etc.
 - Only include "credentials" if the user provided login details; omit it otherwise
-- Only include a task-level "url" if it differs from the plan-level "url"; omit it otherwise
+- Only include a task-level "startUrl" if it differs from the plan-level "startUrl"; omit it otherwise
 - No markdown, no explanation, just the JSON`;
 
 export const chatRouter = router({

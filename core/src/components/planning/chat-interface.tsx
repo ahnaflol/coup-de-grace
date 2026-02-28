@@ -49,11 +49,6 @@ function PlanProposalCard({ plan }: { plan: Plan }) {
                   URL: {t.startUrl}
                 </p>
               )}
-              {t.description && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t.description}
-                </p>
-              )}
               <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
                 {t.instruction}
               </p>

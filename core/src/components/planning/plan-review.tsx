@@ -98,11 +98,6 @@ export function PlanReview({ planId, onBackToChat }: PlanReviewProps) {
                     URL: {t.startUrl}
                   </p>
                 )}
-                {t.description && (
-                  <p className="text-xs text-muted-foreground">
-                    {t.description}
-                  </p>
-                )}
                 <p className="whitespace-pre-wrap text-xs text-muted-foreground">
                   {t.instruction}
                 </p>

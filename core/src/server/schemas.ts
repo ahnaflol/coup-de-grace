@@ -2,9 +2,8 @@ import { z } from "zod";
 
 export const planTaskSchema = z.object({
   title: z.string(),
-  description: z.string(),
-  startUrl: z.string().optional(), // If overriding the plan's startUrl, otherwise use the plan's startUrl
   instruction: z.string(),
+  startUrl: z.string().optional(), // overrides plan.startUrl for this task
 });
 
 export const planSchema = z.object({
