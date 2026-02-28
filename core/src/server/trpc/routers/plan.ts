@@ -1,41 +1,29 @@
-import { z } from "zod";
-import { router, publicProcedure } from "../index";
-import { plans } from "../../db/schema";
-import { eq } from "drizzle-orm";
 import { mistral } from "@ai-sdk/mistral";
 import { generateText, Output } from "ai";
+import { z } from "zod";
 
-const planSchema = z.object({
-  title: z.string(),
-  tasks: z.array(
-    z.object({
-      title: z.string(),
-      instruction: z.string(),
-    })
-  ),
-});
+import type { PlanWithTasks } from "../../db/types";
+import { router, publicProcedure } from "../index";
+import { planContentSchema } from "../schemas";
 
 export const planRouter = router({
   get: publicProcedure
     .input(z.object({ planId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const plan = await ctx.db.query.plans.findFirst({
-        where: eq(plans.id, input.planId),
-        with: { tasks: true },
-      });
+      const plan = (await ctx.db.plans.findById(input.planId, {
+        withTasks: true,
+      })) as PlanWithTasks | null;
       if (!plan) return null;
-      const parsed = planSchema.parse(JSON.parse(plan.content));
+      const parsed = planContentSchema.parse(JSON.parse(plan.content));
       return { ...plan, parsed };
     }),
 
   approve: publicProcedure
     .input(z.object({ planId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const [updated] = await ctx.db
-        .update(plans)
-        .set({ status: "approved", updatedAt: new Date() })
-        .where(eq(plans.id, input.planId))
-        .returning();
+      const updated = await ctx.db.plans.update(input.planId, {
+        status: "approved",
+      });
       return updated;
     }),
 
@@ -47,9 +35,7 @@ export const planRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const existing = await ctx.db.query.plans.findFirst({
-        where: eq(plans.id, input.planId),
-      });
+      const existing = await ctx.db.plans.findById(input.planId);
       if (!existing) throw new Error("Plan not found");
 
       const { output: parsed } = await generateText({
@@ -60,19 +46,14 @@ ${existing.content}
 
 The user wants changes. Regenerate the plan incorporating their feedback.`,
         prompt: input.feedback,
-        output: Output.object({ schema: planSchema }),
+        output: Output.object({ schema: planContentSchema }),
       });
 
-      const [updated] = await ctx.db
-        .update(plans)
-        .set({
-          content: JSON.stringify(parsed),
-          status: "draft",
-          updatedAt: new Date(),
-        })
-        .where(eq(plans.id, input.planId))
-        .returning();
+      const updated = await ctx.db.plans.update(input.planId, {
+        content: JSON.stringify(parsed),
+        status: "draft",
+      });
 
-      return { ...updated, parsed };
+      return updated ? { ...updated, parsed } : null;
     }),
 });

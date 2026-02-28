@@ -1,16 +1,15 @@
 import Browserbase from "@browserbasehq/sdk";
-import { and, eq, inArray, sql } from "drizzle-orm";
+
 import { db } from "../db";
-import { agentEvents, tasks } from "../db/schema";
 import { emitAgentEvent } from "./events";
 
-export async function stopAllRunningTasks(input?: { reason?: string }) {
+export async function stopAllRunningTasks(input?: { reason?: string }): Promise<{
+  stopped: number;
+  requestedRelease: number;
+}> {
   const reason = input?.reason ?? "Stopped due to a new execution starting";
 
-  const runningTasks = await db.query.tasks.findMany({
-    where: eq(tasks.status, "running"),
-    columns: { id: true, planId: true, browserbaseSessionId: true },
-  });
+  const runningTasks = await db.tasks.findByStatus("running");
 
   if (runningTasks.length === 0) return { stopped: 0, requestedRelease: 0 };
 
@@ -19,16 +18,7 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
   const bb = apiKey ? new Browserbase({ apiKey }) : null;
 
   const taskIds = runningTasks.map((t) => t.id);
-  const seqRows = await db
-    .select({
-      taskId: agentEvents.taskId,
-      maxSeq: sql<number>`max(${agentEvents.sequenceNum})`.mapWith(Number),
-    })
-    .from(agentEvents)
-    .where(inArray(agentEvents.taskId, taskIds))
-    .groupBy(agentEvents.taskId);
-
-  const seqMap = new Map(seqRows.map((r) => [r.taskId, r.maxSeq]));
+  const seqMap = await db.agentEvents.getMaxSequenceNum(taskIds);
 
   const releaseResults = await Promise.allSettled(
     runningTasks.map(async (t) => {
@@ -45,65 +35,42 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
     (r) => r.status === "fulfilled" && r.value
   ).length;
 
-  const now = new Date();
+  const now = new Date().toISOString();
   const stopResults = await Promise.allSettled(
     runningTasks.map(async (t) => {
-      const [updated] = await db
-        .update(tasks)
-        .set({
+      const updated = await db.tasks.update(
+        t.id,
+        {
           status: "failed",
           result: { error: reason },
           completedAt: now,
-        })
-        .where(and(eq(tasks.id, t.id), eq(tasks.status, "running")))
-        .returning({ id: tasks.id });
+        },
+        { status: "running" }
+      );
 
       if (!updated) return false;
 
       let sequenceNum = (seqMap.get(t.id) ?? -1) + 1;
 
-      const [errorEvent, failedEvent] = await db
-        .insert(agentEvents)
-        .values([
-          {
-            planId: t.planId,
-            taskId: t.id,
-            type: "error",
-            data: { error: reason },
-            sequenceNum: sequenceNum++,
-          },
-          {
-            planId: t.planId,
-            taskId: t.id,
-            type: "failed",
-            data: { error: reason },
-            sequenceNum: sequenceNum++,
-          },
-        ])
-        .returning({
-          id: agentEvents.id,
-          planId: agentEvents.planId,
-          taskId: agentEvents.taskId,
-          data: agentEvents.data,
-          sequenceNum: agentEvents.sequenceNum,
-        });
+      const [errorEvent, failedEvent] = await db.agentEvents.insertMany([
+        {
+          planId: t.planId,
+          taskId: t.id,
+          type: "error" as const,
+          data: { error: reason },
+          sequenceNum: sequenceNum++,
+        },
+        {
+          planId: t.planId,
+          taskId: t.id,
+          type: "failed" as const,
+          data: { error: reason },
+          sequenceNum: sequenceNum++,
+        },
+      ]);
 
-      emitAgentEvent({
-        id: errorEvent.id,
-        planId: errorEvent.planId,
-        taskId: errorEvent.taskId,
-        type: "error",
-        data: errorEvent.data,
-        sequenceNum: errorEvent.sequenceNum,
-      });
-      emitAgentEvent({
-        id: failedEvent.id,
-        planId: failedEvent.planId,
-        taskId: failedEvent.taskId,
-        type: "failed",
-        data: failedEvent.data,
-        sequenceNum: failedEvent.sequenceNum,
-      });
+      emitAgentEvent(errorEvent);
+      emitAgentEvent(failedEvent);
 
       return true;
     })

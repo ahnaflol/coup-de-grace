@@ -177,15 +177,11 @@ The `liveViewUrl` is also persisted on the task row and available via `execution
 Make sure these are set:
 
 ```
-DATABASE_URL="postgres://..."
-ANTHROPIC_API_KEY="..."
 MISTRAL_API_KEY="..."
 BROWSERBASE_API_KEY="..."
 BROWSERBASE_PROJECT_ID="..."
 ```
 
-## Database Setup
+## Data Storage
 
-```bash
-pnpm db:push
-```
+Data is stored locally as JSON files in the `data/` directory. No database setup required.

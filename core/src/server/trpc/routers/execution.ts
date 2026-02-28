@@ -1,26 +1,22 @@
-import { z } from "zod";
-import { router, publicProcedure } from "../index";
-import { plans, tasks, agentEvents } from "../../db/schema";
-import { and, eq, gt } from "drizzle-orm";
 import { tracked } from "@trpc/server";
-import { orchestrate } from "../../agents/orchestrator";
+import { z } from "zod";
+
 import { agentEventEmitter, type AgentEvent } from "../../agents/events";
+import { orchestrate } from "../../agents/orchestrator";
+import { router, publicProcedure } from "../index";
 
 export const executionRouter = router({
   start: publicProcedure
     .input(z.object({ planId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const [locked] = await ctx.db
-        .update(plans)
-        .set({ status: "executing", updatedAt: new Date() })
-        .where(and(eq(plans.id, input.planId), eq(plans.status, "approved")))
-        .returning({ id: plans.id });
+      const locked = await ctx.db.plans.update(
+        input.planId,
+        { status: "executing" },
+        { status: "approved" }
+      );
 
       if (!locked) {
-        const plan = await ctx.db.query.plans.findFirst({
-          where: eq(plans.id, input.planId),
-          columns: { id: true, status: true },
-        });
+        const plan = await ctx.db.plans.findById(input.planId);
         if (!plan) throw new Error("Plan not found");
         throw new Error(
           `Plan must be approved before execution (current status: ${plan.status})`
@@ -43,21 +39,20 @@ export const executionRouter = router({
     .subscription(async function* ({ ctx, input }) {
       // Replay missed events if reconnecting
       if (input.lastEventId) {
-        const lastEvent = await ctx.db.query.agentEvents.findFirst({
-          where: eq(agentEvents.id, input.lastEventId),
-        });
+        const lastEvent = await ctx.db.agentEvents.findById(input.lastEventId);
 
         if (lastEvent && lastEvent.planId === input.planId) {
-          const candidateEvents = await ctx.db.query.agentEvents.findMany({
-            where: and(
-              eq(agentEvents.planId, input.planId),
-              gt(agentEvents.createdAt, new Date(lastEvent.createdAt.getTime() - 1))
-            ),
-            orderBy: (agentEvents, { asc }) => [
-              asc(agentEvents.createdAt),
-              asc(agentEvents.id),
-            ],
-          });
+          const threshold = new Date(
+            new Date(lastEvent.createdAt).getTime() - 1
+          ).toISOString();
+
+          const candidateEvents = await ctx.db.agentEvents.findByPlanId(
+            input.planId,
+            {
+              afterCreatedAt: threshold,
+              orderByCreatedAtAsc: true,
+            }
+          );
 
           let foundLast = false;
           for (const event of candidateEvents) {
@@ -113,8 +108,6 @@ export const executionRouter = router({
   getTaskStatuses: publicProcedure
     .input(z.object({ planId: z.string() }))
     .query(async ({ ctx, input }) => {
-      return ctx.db.query.tasks.findMany({
-        where: eq(tasks.planId, input.planId),
-      });
+      return ctx.db.tasks.findByPlanId(input.planId);
     }),
 });

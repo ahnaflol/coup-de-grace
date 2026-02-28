@@ -114,7 +114,9 @@ export function ChatInterface({ planId, onAccept }: ChatInterfaceProps) {
         planId,
         feedback: content,
       });
-      setPlan(updated.parsed);
+      if (updated?.parsed) {
+        setPlan(updated.parsed);
+      }
 
       const assistantMessage: ChatMessageType = {
         id: crypto.randomUUID(),

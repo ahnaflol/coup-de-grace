@@ -1,17 +1,12 @@
 import { EventEmitter } from "events";
 
-export interface AgentEvent {
-  id: string;
-  planId: string;
-  taskId: string;
-  type: "step" | "session_ready" | "error" | "completed" | "failed";
-  data: unknown;
-  sequenceNum: number;
-}
+import type { AgentEvent } from "../db/types";
+
+export type { AgentEvent };
 
 export const agentEventEmitter = new EventEmitter();
 agentEventEmitter.setMaxListeners(100);
 
-export function emitAgentEvent(event: AgentEvent) {
+export function emitAgentEvent(event: AgentEvent): void {
   agentEventEmitter.emit("agentEvent", event);
 }
