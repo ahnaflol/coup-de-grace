@@ -4,16 +4,7 @@ import { plans, tasks } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { mistral } from "@ai-sdk/mistral";
 import { generateText, Output } from "ai";
-
-const planSchema = z.object({
-  title: z.string(),
-  tasks: z.array(
-    z.object({
-      title: z.string(),
-      instruction: z.string(),
-    })
-  ),
-});
+import { planSchema } from "@/server/schemas";
 
 export const planRouter = router({
   get: publicProcedure

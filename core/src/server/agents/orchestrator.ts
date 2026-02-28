@@ -3,11 +3,7 @@ import { plans, tasks } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { runAgent } from "./runner";
 import { stopAllRunningTasks } from "./stop";
-
-interface PlanContent {
-  title: string;
-  tasks: { title: string; instruction: string }[];
-}
+import { Plan } from "@/server/schemas";
 
 export async function orchestrate(planId: string) {
   try {
@@ -23,7 +19,7 @@ export async function orchestrate(planId: string) {
       .limit(1);
     if (!plan) throw new Error("Plan not found");
 
-    const content: PlanContent = JSON.parse(plan.content);
+    const content: Plan = JSON.parse(plan.content);
 
     // TODO: restore all tasks once parallelism is re-enabled
     const tasksToRun = content.tasks.slice(0, 1);
@@ -36,15 +32,24 @@ export async function orchestrate(planId: string) {
           .values({
             planId,
             title: t.title,
+            startUrl: t.startUrl ?? content.startUrl,
             instruction: t.instruction,
           })
           .returning()
-          .then((rows) => rows[0])
-      )
+          .then((rows) => rows[0]),
+      ),
     );
 
     for (const task of taskRecords) {
-      await runAgent(planId, task.id, task.instruction);
+      if (!task.startUrl) {
+        throw new Error(`Task ${task.id} missing startUrl`);
+      }
+      await runAgent({
+        planId,
+        taskId: task.id,
+        instruction: task.instruction,
+        startUrl: task.startUrl,
+      });
     }
 
     const updatedTasks = await db

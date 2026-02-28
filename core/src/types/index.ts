@@ -7,15 +7,6 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-export interface ParsedPlanTask {
-  title: string;
-  instruction: string;
-}
-
-export interface ParsedPlan {
-  title: string;
-  tasks: ParsedPlanTask[];
-}
 
 export type TaskStatus = "pending" | "running" | "completed" | "failed";
 
@@ -33,4 +24,3 @@ export interface TaskEvent {
   data: unknown;
   sequenceNum: number;
 }
-

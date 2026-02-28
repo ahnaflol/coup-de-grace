@@ -1,5 +1,5 @@
-import Browserbase from "@browserbasehq/sdk";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { BrowserUse } from "browser-use-sdk";
 import { db } from "../db";
 import { agentEvents, tasks } from "../db/schema";
 import { emitAgentEvent } from "./events";
@@ -11,16 +11,15 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
     .select({
       id: tasks.id,
       planId: tasks.planId,
-      browserbaseSessionId: tasks.browserbaseSessionId,
+      browserUseSessionId: tasks.browserUseSessionId,
     })
     .from(tasks)
     .where(eq(tasks.status, "running"));
 
   if (runningTasks.length === 0) return { stopped: 0, requestedRelease: 0 };
 
-  const apiKey = process.env.BROWSERBASE_API_KEY;
-  const projectId = process.env.BROWSERBASE_PROJECT_ID;
-  const bb = apiKey ? new Browserbase({ apiKey }) : null;
+  const apiKey = process.env.BROWSER_USE_API_KEY;
+  const bu = apiKey ? new BrowserUse({ apiKey }) : null;
 
   const taskIds = runningTasks.map((t) => t.id);
   const seqRows = await db
@@ -36,13 +35,10 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
 
   const releaseResults = await Promise.allSettled(
     runningTasks.map(async (t) => {
-      if (!bb || !t.browserbaseSessionId) return false;
-      await bb.sessions.update(t.browserbaseSessionId, {
-        status: "REQUEST_RELEASE",
-        projectId,
-      });
+      if (!bu || !t.browserUseSessionId) return false;
+      await bu.sessions.stop(t.browserUseSessionId);
       return true;
-    })
+    }),
   );
 
   const requestedRelease = releaseResults.filter(

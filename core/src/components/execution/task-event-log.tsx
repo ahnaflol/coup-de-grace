@@ -31,11 +31,11 @@ function summarize(
   data: unknown
 ): { action: string; detail: string } {
   if (type === "session_ready" && data && typeof data === "object") {
-    const liveViewUrl =
-      isRecord(data) && typeof data.liveViewUrl === "string"
-        ? data.liveViewUrl
+    const liveUrl =
+      isRecord(data) && typeof data.liveUrl === "string"
+        ? data.liveUrl
         : null;
-    if (liveViewUrl) {
+    if (liveUrl) {
       return { action: "session_ready", detail: "Live view is ready." };
     }
     return { action: "session_ready", detail: "Session initialized." };

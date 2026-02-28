@@ -18,7 +18,7 @@ export function PlanReview({ planId, onBackToChat }: PlanReviewProps) {
   const router = useRouter();
   const planQuery = trpc.plan.get.useQuery(
     { planId: planId ?? "" },
-    { enabled: Boolean(planId) }
+    { enabled: Boolean(planId) },
   );
   const approve = trpc.plan.approve.useMutation();
   const startExecution = trpc.execution.start.useMutation();
@@ -93,6 +93,16 @@ export function PlanReview({ planId, onBackToChat }: PlanReviewProps) {
                 <p className="text-sm font-semibold">
                   {idx + 1}. {t.title}
                 </p>
+                {t.startUrl && (
+                  <p className="text-xs text-muted-foreground">
+                    URL: {t.startUrl}
+                  </p>
+                )}
+                {t.description && (
+                  <p className="text-xs text-muted-foreground">
+                    {t.description}
+                  </p>
+                )}
                 <p className="whitespace-pre-wrap text-xs text-muted-foreground">
                   {t.instruction}
                 </p>

@@ -172,9 +172,11 @@ export const executionRouter = router({
           id: tasks.id,
           title: tasks.title,
           instruction: tasks.instruction,
+          startUrl: tasks.startUrl,
           status: tasks.status,
-          liveViewUrl: tasks.liveViewUrl,
-          browserbaseSessionId: tasks.browserbaseSessionId,
+          liveUrl: tasks.liveUrl,
+          browserUseSessionId: tasks.browserUseSessionId,
+          shareUrl: tasks.shareUrl,
         })
         .from(tasks)
         .where(eq(tasks.planId, input.planId));

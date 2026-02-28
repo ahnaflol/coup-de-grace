@@ -14,12 +14,16 @@ export function TaskCard({
     id: string;
     title: string;
     instruction: string;
+    startUrl: string | null;
     status: TaskStatus;
-    liveViewUrl: string | null;
-    browserbaseSessionId: string | null;
+    liveUrl: string | null;
+    browserUseSessionId: string | null;
+    shareUrl: string | null;
   };
   events: TaskEventWithTime[];
 }) {
+  const viewerUrl = task.shareUrl ?? task.liveUrl;
+
   return (
     <Card className="overflow-hidden transition-shadow hover:shadow-md">
       <CardHeader className="p-3 pb-0">
@@ -35,9 +39,9 @@ export function TaskCard({
       </CardHeader>
       <CardContent className="p-3 space-y-3">
         <div className="relative aspect-[16/10] w-full overflow-hidden rounded-lg bg-muted">
-          {task.liveViewUrl ? (
+          {task.liveUrl ? (
             <iframe
-              src={task.liveViewUrl}
+              src={task.liveUrl}
               className="absolute inset-0 h-full w-full border-0"
               allow="clipboard-read; clipboard-write"
               referrerPolicy="no-referrer"
@@ -51,14 +55,14 @@ export function TaskCard({
 
         <div className="flex items-center justify-between gap-2">
           <TaskEventLog taskTitle={task.title} events={events} />
-          {task.browserbaseSessionId && (
+          {viewerUrl && (
             <a
-              href={`https://www.browserbase.com/sessions/${task.browserbaseSessionId}`}
+              href={viewerUrl}
               target="_blank"
               rel="noreferrer"
               className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
             >
-              Open viewer
+              Open live view
             </a>
           )}
         </div>
@@ -66,4 +70,3 @@ export function TaskCard({
     </Card>
   );
 }
-

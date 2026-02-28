@@ -12,9 +12,11 @@ export function TaskGrid({
     id: string;
     title: string;
     instruction: string;
+    startUrl: string | null;
     status: TaskStatus;
-    liveViewUrl: string | null;
-    browserbaseSessionId: string | null;
+    liveUrl: string | null;
+    browserUseSessionId: string | null;
+    shareUrl: string | null;
   }>;
   logsByTaskId: Record<string, TaskEventWithTime[]>;
 }) {
@@ -40,4 +42,3 @@ export function TaskGrid({
     </div>
   );
 }
-

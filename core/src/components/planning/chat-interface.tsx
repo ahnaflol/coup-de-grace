@@ -11,7 +11,8 @@ import { trpc } from "@/lib/trpc";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
-import type { ChatMessage as ChatMessageType, ParsedPlan } from "@/types";
+import type { ChatMessage as ChatMessageType } from "@/types";
+import type { Plan } from "@/server/schemas";
 
 interface ChatInterfaceProps {
   planId?: string;
@@ -24,7 +25,7 @@ function buildPromptUrl() {
   return `/plan?${search.toString()}`;
 }
 
-function PlanProposalCard({ plan }: { plan: ParsedPlan }) {
+function PlanProposalCard({ plan }: { plan: Plan }) {
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -43,6 +44,16 @@ function PlanProposalCard({ plan }: { plan: ParsedPlan }) {
               <p className="text-sm font-medium">
                 {idx + 1}. {t.title}
               </p>
+              {t.startUrl && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  URL: {t.startUrl}
+                </p>
+              )}
+              {t.description && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t.description}
+                </p>
+              )}
               <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
                 {t.instruction}
               </p>
@@ -58,11 +69,11 @@ export function ChatInterface({ planId, onAccept }: ChatInterfaceProps) {
   const router = useRouter();
   const planQuery = trpc.plan.get.useQuery(
     { planId: planId ?? "" },
-    { enabled: Boolean(planId) }
+    { enabled: Boolean(planId) },
   );
   const requestChanges = trpc.plan.requestChanges.useMutation();
 
-  const [plan, setPlan] = useState<ParsedPlan | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const hasSeeded = useRef(false);
@@ -198,7 +209,10 @@ export function ChatInterface({ planId, onAccept }: ChatInterfaceProps) {
         </div>
       </ScrollArea>
 
-      <ChatInput onSend={handleSend} disabled={isTyping || requestChanges.isPending} />
+      <ChatInput
+        onSend={handleSend}
+        disabled={isTyping || requestChanges.isPending}
+      />
     </div>
   );
 }

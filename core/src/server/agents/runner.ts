@@ -1,9 +1,9 @@
-import { Stagehand } from "@browserbasehq/stagehand";
-import Browserbase from "@browserbasehq/sdk";
+import { BrowserUse } from "browser-use-sdk";
 import { db } from "../db";
 import { tasks, agentEvents } from "../db/schema";
 import { and, eq } from "drizzle-orm";
 import { emitAgentEvent } from "./events";
+import { agentResultSchema } from "@/server/schemas";
 
 async function persistAndEmitEvent(input: {
   planId: string;
@@ -35,18 +35,27 @@ async function persistAndEmitEvent(input: {
   });
 }
 
-export async function runAgent(
-  planId: string,
-  taskId: string,
-  instruction: string,
-) {
+export async function runAgent(input: {
+  planId: string;
+  taskId: string;
+  instruction: string;
+  startUrl: string;
+}) {
+  const { planId, taskId, instruction, startUrl } = input;
   let sequenceNum = 0;
-  let stagehand: Stagehand | null = null;
+  let client: BrowserUse | null = null;
+  let sessionId: string | null = null;
 
   console.log(`[runner] Starting agent | planId=${planId} taskId=${taskId}`);
   console.log(`[runner] Instruction: ${instruction}`);
 
   try {
+    if (!process.env.BROWSER_USE_API_KEY) {
+      throw new Error(
+        "Missing BROWSER_USE_API_KEY. Set it to run browser-use sessions.",
+      );
+    }
+
     // Mark task as running
     await db
       .update(tasks)
@@ -54,38 +63,35 @@ export async function runAgent(
       .where(eq(tasks.id, taskId));
     console.log(`[runner] Task marked as running | taskId=${taskId}`);
 
-    // Init Stagehand with Browserbase
-    console.log(`[runner] Initializing Stagehand with Browserbase`);
+    client = new BrowserUse();
 
-    stagehand = new Stagehand({
-      env: "BROWSERBASE",
-      apiKey: process.env.BROWSERBASE_API_KEY,
-      projectId: process.env.BROWSERBASE_PROJECT_ID,
-      // model: "mistral/codestral-2508",
-      model: "openai/gpt-5",
-    });
-    await stagehand.init();
-    console.log(`[runner] Stagehand initialized`);
-
-    // Fetch embeddable Live View URL from Browserbase
-    const bbSessionId = stagehand.browserbaseSessionID;
-    console.log(`[runner] Browserbase session ID: ${bbSessionId}`);
-    let liveViewUrl: string | undefined;
-
-    if (bbSessionId) {
-      const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! });
-      const debugInfo = await bb.sessions.debug(bbSessionId);
-      liveViewUrl = debugInfo.debuggerFullscreenUrl ?? undefined;
-      console.log(`[runner] Live view URL: ${liveViewUrl}`);
-
-      await db
-        .update(tasks)
-        .set({
-          browserbaseSessionId: bbSessionId,
-          liveViewUrl: liveViewUrl ?? null,
-        })
-        .where(eq(tasks.id, taskId));
+    let allowedDomains: string[] | undefined;
+    try {
+      allowedDomains = [new URL(startUrl).hostname];
+    } catch {
+      allowedDomains = undefined;
     }
+
+    console.log(`[runner] Creating BrowserUse session`);
+    const session = await client.sessions.create({ startUrl });
+    sessionId = session.id;
+    console.log(`[runner] BrowserUse session ID: ${sessionId}`);
+
+    const liveUrl = session.liveUrl ?? null;
+    console.log(`[runner] Live URL: ${liveUrl ?? "(none)"}`);
+
+    const share = await client.sessions
+      .createShare(sessionId)
+      .catch(() => null);
+
+    await db
+      .update(tasks)
+      .set({
+        browserUseSessionId: sessionId,
+        liveUrl,
+        shareUrl: share?.shareUrl ?? null,
+      })
+      .where(eq(tasks.id, taskId));
 
     // Emit session_ready event with live view URL
     await persistAndEmitEvent({
@@ -93,23 +99,46 @@ export async function runAgent(
       taskId,
       type: "session_ready",
       data: {
-        browserbaseSessionId: bbSessionId ?? null,
-        liveViewUrl: liveViewUrl ?? null,
+        sessionId,
+        liveUrl,
+        shareUrl: share?.shareUrl ?? null,
       },
       sequenceNum: sequenceNum++,
     });
 
-    // Create and execute agent
-    console.log(`[runner] Creating agent with model mistral-large-latest`);
-    const agent = stagehand.agent();
-
-    console.log(`[runner] Executing agent | maxSteps=25`);
-    const result = await agent.execute({
-      instruction,
-      highlightCursor: true,
+    console.log(`[runner] Executing BrowserUse task | maxSteps=25`);
+    const run = client.run(instruction, {
+      sessionId,
+      schema: agentResultSchema,
       maxSteps: 25,
+      startUrl,
+      allowedDomains,
+      highlightElements: true,
     });
-    console.log(`[runner] Agent execution complete | taskId=${taskId}`, result);
+
+    for await (const step of run) {
+      console.log(`[runner] Step ${step.number}: ${step.nextGoal}`);
+      console.log(`[runner]   URL: ${step.url}`);
+      await persistAndEmitEvent({
+        planId,
+        taskId,
+        type: "step",
+        data: {
+          number: step.number,
+          nextGoal: step.nextGoal,
+          url: step.url,
+          screenshotUrl: step.screenshotUrl ?? null,
+          actions: step.actions,
+        },
+        sequenceNum: sequenceNum++,
+      });
+    }
+
+    const result = run.result ?? (await run);
+    console.log(`[runner] Task execution complete | taskId=${taskId}`, {
+      taskId: result.id,
+      status: result.status,
+    });
 
     // Mark task completed
     const [completedRow] = await db
@@ -168,9 +197,9 @@ export async function runAgent(
       sequenceNum: sequenceNum++,
     });
   } finally {
-    if (stagehand) {
-      console.log(`[runner] Closing Stagehand | taskId=${taskId}`);
-      await stagehand.close().catch(() => {});
+    if (client && sessionId) {
+      console.log(`[runner] Stopping BrowserUse session | taskId=${taskId}`);
+      await client.sessions.stop(sessionId).catch(() => {});
     }
   }
 }

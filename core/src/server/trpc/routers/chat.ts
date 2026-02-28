@@ -3,26 +3,22 @@ import { router, publicProcedure } from "../index";
 import { plans } from "../../db/schema";
 import { mistral } from "@ai-sdk/mistral";
 import { generateText, Output } from "ai";
-
-const planSchema = z.object({
-  title: z.string(),
-  tasks: z.array(
-    z.object({
-      title: z.string(),
-      instruction: z.string(),
-    }),
-  ),
-});
+import { planSchema } from "@/server/schemas";
 
 const SYSTEM_PROMPT = `You are a test planning assistant for a computer-use agent (CUA) platform. Given a user's message describing what to test on a website, generate a structured test plan.
 
 Output ONLY valid JSON with this exact shape:
 {
   "title": "Short plan title",
+  "url": "https://target-site.com",
+  "credentials": { "email": "user@example.com", "password": "secret" },
   "tasks": [
     {
-      "title": "Short task title",
-      "instruction": "Detailed step-by-step instruction for the browser agent to execute this test"
+      "title": "Short task name",
+      "description": "What this task tests",
+      "hint": "Optional agent nudge (omit if not needed)",
+      "url": "https://target-site.com/specific-page (omit to use plan url)",
+      "instruction": "Detailed step-by-step instruction for the browser agent"
     }
   ]
 }
@@ -31,8 +27,9 @@ Rules:
 - Each task should be independently executable by a browser agent
 - Instructions should be specific and actionable (click, type, navigate, verify, etc.)
 - Keep tasks focused - one logical test per task
-- If the user requests testing across N sessions (e.g. \"across 5 user sessions\"), output N tasks (one per session) when feasible. Make each task explicitly start from a fresh session and label them \"Session 1\", \"Session 2\", etc.
-- Include the target URL in each task's instruction if relevant
+- If the user requests testing across N sessions (e.g. "across 5 user sessions"), output N tasks (one per session) when feasible. Make each task explicitly start from a fresh session and label them "Session 1", "Session 2", etc.
+- Only include "credentials" if the user provided login details; omit it otherwise
+- Only include a task-level "url" if it differs from the plan-level "url"; omit it otherwise
 - No markdown, no explanation, just the JSON`;
 
 export const chatRouter = router({
