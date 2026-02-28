@@ -1,15 +1,16 @@
+import { Stagehand, AISdkClient } from "@browserbasehq/stagehand";
 import { createMistral } from "@ai-sdk/mistral";
 import Browserbase from "@browserbasehq/sdk";
-import { AISdkClient, Stagehand } from "@browserbasehq/stagehand";
-
 import { db } from "../db";
+import { tasks, agentEvents } from "../db/schema";
+import { and, eq } from "drizzle-orm";
 import { emitAgentEvent } from "./events";
 
 export async function runAgent(
   planId: string,
   taskId: string,
   instruction: string,
-): Promise<void> {
+) {
   let sequenceNum = 0;
   let stagehand: Stagehand | null = null;
 
@@ -18,10 +19,10 @@ export async function runAgent(
 
   try {
     // Mark task as running
-    await db.tasks.update(taskId, {
-      status: "running",
-      startedAt: new Date().toISOString(),
-    });
+    await db
+      .update(tasks)
+      .set({ status: "running", startedAt: new Date() })
+      .where(eq(tasks.id, taskId));
     console.log(`[runner] Task marked as running | taskId=${taskId}`);
 
     // Init Stagehand with Browserbase
@@ -51,24 +52,43 @@ export async function runAgent(
       liveViewUrl = debugInfo.debuggerFullscreenUrl ?? undefined;
       console.log(`[runner] Live view URL: ${liveViewUrl}`);
 
-      await db.tasks.update(taskId, {
-        browserbaseSessionId: bbSessionId,
-        liveViewUrl: liveViewUrl ?? null,
-      });
+      await db
+        .update(tasks)
+        .set({
+          browserbaseSessionId: bbSessionId,
+          liveViewUrl: liveViewUrl ?? null,
+        })
+        .where(eq(tasks.id, taskId));
     }
 
     // Emit session_ready event with live view URL
-    const readyEvent = await db.agentEvents.insert({
-      planId,
-      taskId,
+    const [readyEvent] = await db
+      .insert(agentEvents)
+      .values({
+        planId,
+        taskId,
+        type: "session_ready",
+        data: {
+          browserbaseSessionId: bbSessionId ?? null,
+          liveViewUrl: liveViewUrl ?? null,
+        },
+        sequenceNum: sequenceNum++,
+      })
+      .returning({
+        id: agentEvents.id,
+        planId: agentEvents.planId,
+        taskId: agentEvents.taskId,
+        data: agentEvents.data,
+        sequenceNum: agentEvents.sequenceNum,
+      });
+    emitAgentEvent({
+      id: readyEvent.id,
+      planId: readyEvent.planId,
+      taskId: readyEvent.taskId,
       type: "session_ready",
-      data: {
-        browserbaseSessionId: bbSessionId ?? null,
-        liveViewUrl: liveViewUrl ?? null,
-      },
-      sequenceNum: sequenceNum++,
+      data: readyEvent.data,
+      sequenceNum: readyEvent.sequenceNum,
     });
-    emitAgentEvent(readyEvent);
 
     // Create and execute agent
     console.log(
@@ -83,66 +103,114 @@ export async function runAgent(
     });
     console.log(`[runner] Agent execution complete | taskId=${taskId}`, result);
 
-    // Mark task completed (only if still running)
-    const completedRow = await db.tasks.update(
-      taskId,
-      {
+    // Mark task completed
+    const [completedRow] = await db
+      .update(tasks)
+      .set({
         status: "completed",
-        result,
-        completedAt: new Date().toISOString(),
-      },
-      { status: "running" }
-    );
+        result: result,
+        completedAt: new Date(),
+      })
+      .where(and(eq(tasks.id, taskId), eq(tasks.status, "running")))
+      .returning({ id: tasks.id });
 
     if (!completedRow) return;
     console.log(`[runner] Task marked as completed | taskId=${taskId}`);
 
     // Emit completed event
-    const completedEvent = await db.agentEvents.insert({
-      planId,
-      taskId,
+    const [completedEvent] = await db
+      .insert(agentEvents)
+      .values({
+        planId,
+        taskId,
+        type: "completed",
+        data: { result },
+        sequenceNum: sequenceNum++,
+      })
+      .returning({
+        id: agentEvents.id,
+        planId: agentEvents.planId,
+        taskId: agentEvents.taskId,
+        data: agentEvents.data,
+        sequenceNum: agentEvents.sequenceNum,
+      });
+    emitAgentEvent({
+      id: completedEvent.id,
+      planId: completedEvent.planId,
+      taskId: completedEvent.taskId,
       type: "completed",
-      data: { result },
-      sequenceNum: sequenceNum++,
+      data: completedEvent.data,
+      sequenceNum: completedEvent.sequenceNum,
     });
-    emitAgentEvent(completedEvent);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(
       `[runner] Agent failed | taskId=${taskId} error=${errorMessage}`,
     );
 
-    // Mark task failed (only if still running)
-    const failedRow = await db.tasks.update(
-      taskId,
-      {
+    // Mark task failed
+    const [failedRow] = await db
+      .update(tasks)
+      .set({
         status: "failed",
         result: { error: errorMessage },
-        completedAt: new Date().toISOString(),
-      },
-      { status: "running" }
-    );
+        completedAt: new Date(),
+      })
+      .where(and(eq(tasks.id, taskId), eq(tasks.status, "running")))
+      .returning({ id: tasks.id });
 
     if (!failedRow) return;
 
     // Emit error + failed events
-    const errorEvent = await db.agentEvents.insert({
-      planId,
-      taskId,
+    const [errorEvent] = await db
+      .insert(agentEvents)
+      .values({
+        planId,
+        taskId,
+        type: "error",
+        data: { error: errorMessage },
+        sequenceNum: sequenceNum++,
+      })
+      .returning({
+        id: agentEvents.id,
+        planId: agentEvents.planId,
+        taskId: agentEvents.taskId,
+        data: agentEvents.data,
+        sequenceNum: agentEvents.sequenceNum,
+      });
+    emitAgentEvent({
+      id: errorEvent.id,
+      planId: errorEvent.planId,
+      taskId: errorEvent.taskId,
       type: "error",
-      data: { error: errorMessage },
-      sequenceNum: sequenceNum++,
+      data: errorEvent.data,
+      sequenceNum: errorEvent.sequenceNum,
     });
-    emitAgentEvent(errorEvent);
 
-    const failedEvent = await db.agentEvents.insert({
-      planId,
-      taskId,
+    const [failedEvent] = await db
+      .insert(agentEvents)
+      .values({
+        planId,
+        taskId,
+        type: "failed",
+        data: { error: errorMessage },
+        sequenceNum: sequenceNum++,
+      })
+      .returning({
+        id: agentEvents.id,
+        planId: agentEvents.planId,
+        taskId: agentEvents.taskId,
+        data: agentEvents.data,
+        sequenceNum: agentEvents.sequenceNum,
+      });
+    emitAgentEvent({
+      id: failedEvent.id,
+      planId: failedEvent.planId,
+      taskId: failedEvent.taskId,
       type: "failed",
-      data: { error: errorMessage },
-      sequenceNum: sequenceNum++,
+      data: failedEvent.data,
+      sequenceNum: failedEvent.sequenceNum,
     });
-    emitAgentEvent(failedEvent);
   } finally {
     if (stagehand) {
       console.log(`[runner] Closing Stagehand | taskId=${taskId}`);
