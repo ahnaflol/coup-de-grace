@@ -41,26 +41,30 @@ export const executionRouter = router({
       })
     )
     .subscription(async function* ({ ctx, input }) {
-      // Get task IDs for this plan
-      const planTasks = await ctx.db.query.tasks.findMany({
-        where: eq(tasks.planId, input.planId),
-        columns: { id: true },
-      });
-      const taskIds = new Set(planTasks.map((t) => t.id));
-
       // Replay missed events if reconnecting
       if (input.lastEventId) {
-        const missedEvents = await ctx.db.query.agentEvents.findMany({
-          where: gt(agentEvents.createdAt, new Date(0)), // get all, filter below
+        const lastEvent = await ctx.db.query.agentEvents.findFirst({
+          where: eq(agentEvents.id, input.lastEventId),
         });
 
-        let foundLast = false;
-        for (const event of missedEvents) {
-          if (event.id === input.lastEventId) {
-            foundLast = true;
-            continue;
-          }
-          if (foundLast && taskIds.has(event.taskId)) {
+        if (lastEvent && lastEvent.planId === input.planId) {
+          const candidateEvents = await ctx.db.query.agentEvents.findMany({
+            where: and(
+              eq(agentEvents.planId, input.planId),
+              gt(agentEvents.createdAt, new Date(lastEvent.createdAt.getTime() - 1))
+            ),
+            orderBy: (agentEvents, { asc }) => [
+              asc(agentEvents.createdAt),
+              asc(agentEvents.id),
+            ],
+          });
+
+          let foundLast = false;
+          for (const event of candidateEvents) {
+            if (!foundLast) {
+              if (event.id === input.lastEventId) foundLast = true;
+              continue;
+            }
             yield tracked(event.id, {
               taskId: event.taskId,
               type: event.type,
@@ -76,7 +80,7 @@ export const executionRouter = router({
       let resolve: (() => void) | null = null;
 
       const handler = (event: AgentEvent) => {
-        if (taskIds.has(event.taskId)) {
+        if (event.planId === input.planId) {
           eventQueue.push(event);
           resolve?.();
         }

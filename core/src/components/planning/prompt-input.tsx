@@ -1,17 +1,32 @@
 "use client";
 
-import { usePlanningStore } from "@/stores/use-planning-store";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
-import { FileDropZone } from "./file-drop-zone";
+import { ArrowRight, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 export function PromptInput() {
-  const { prompt, setPrompt, setStep, selectedMode } = usePlanningStore();
+  const router = useRouter();
+  const [prompt, setPrompt] = useState("");
+  const sendMessage = trpc.chat.sendMessage.useMutation();
 
-  const handleContinue = () => {
-    if (prompt.trim()) {
-      setStep("chat");
+  const handleGeneratePlan = async () => {
+    const message = prompt.trim();
+    if (!message || sendMessage.isPending) return;
+    try {
+      const result = await sendMessage.mutateAsync({ message });
+      const search = new URLSearchParams();
+      search.set("step", "chat");
+      search.set("planId", result.plan.id);
+      search.set("sessionId", result.sessionId);
+      router.push(`/plan?${search.toString()}`);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to generate plan";
+      toast.error(message);
     }
   };
 
@@ -19,11 +34,10 @@ export function PromptInput() {
     <div className="mx-auto w-full max-w-2xl space-y-6 px-4">
       <div className="text-center space-y-2">
         <h2 className="text-2xl font-semibold tracking-tight">
-          Describe your task
+          Describe your testing task
         </h2>
         <p className="text-muted-foreground">
-          Tell us what you want the {selectedMode?.replace("-", " ")} agents to
-          do. Be as detailed as possible.
+          Tell us what you want to test. Be as detailed as possible.
         </p>
       </div>
 
@@ -40,17 +54,24 @@ export function PromptInput() {
           </span>
         </div>
 
-        <FileDropZone />
-
         <div className="flex justify-end">
           <Button
-            onClick={handleContinue}
-            disabled={!prompt.trim()}
+            onClick={handleGeneratePlan}
+            disabled={!prompt.trim() || sendMessage.isPending}
             size="lg"
             className="gap-2"
           >
-            Continue
-            <ArrowRight className="h-4 w-4" />
+            {sendMessage.isPending ? (
+              <>
+                Generating
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </>
+            ) : (
+              <>
+                Generate plan
+                <ArrowRight className="h-4 w-4" />
+              </>
+            )}
           </Button>
         </div>
       </div>

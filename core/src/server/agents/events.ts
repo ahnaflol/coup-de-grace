@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 
 export interface AgentEvent {
   id: string;
+  planId: string;
   taskId: string;
   type: "step" | "session_ready" | "error" | "completed" | "failed";
   data: unknown;

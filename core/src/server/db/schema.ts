@@ -71,6 +71,9 @@ export const tasks = pgTable("tasks", {
 
 export const agentEvents = pgTable("agent_events", {
   id: uuid().primaryKey().defaultRandom(),
+  planId: uuid()
+    .notNull()
+    .references(() => plans.id),
   taskId: uuid()
     .notNull()
     .references(() => tasks.id),
@@ -102,6 +105,10 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
 }));
 
 export const agentEventsRelations = relations(agentEvents, ({ one }) => ({
+  plan: one(plans, {
+    fields: [agentEvents.planId],
+    references: [plans.id],
+  }),
   task: one(tasks, {
     fields: [agentEvents.taskId],
     references: [tasks.id],

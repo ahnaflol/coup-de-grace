@@ -1,20 +1,14 @@
-"use client";
-
-import { useEffect } from "react";
+import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/layout/app-header";
-import { ExecutionStats } from "@/components/execution/execution-stats";
-import { AgentGrid } from "@/components/execution/agent-grid";
-import { useExecutionStore } from "@/stores/use-execution-store";
-import { MOCK_AGENTS } from "@/lib/mock-data";
+import { ExecutionDashboard } from "@/components/execution/execution-dashboard";
 
-export default function ExecutePage() {
-  const { agents, setAgents } = useExecutionStore();
-
-  useEffect(() => {
-    if (agents.length === 0) {
-      setAgents(MOCK_AGENTS);
-    }
-  }, [agents.length, setAgents]);
+export default function ExecutePage({
+  searchParams,
+}: {
+  searchParams: { planId?: string };
+}) {
+  const planId = searchParams.planId;
+  if (!planId) redirect("/plan");
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -23,16 +17,16 @@ export default function ExecutePage() {
         <div className="mx-auto w-full max-w-7xl space-y-6">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              Execution Dashboard
+              Execution dashboard
             </h1>
             <p className="text-sm text-muted-foreground">
-              Monitor and control your parallel browser agents
+              Monitor parallel agents as they run.
             </p>
           </div>
-          <ExecutionStats />
-          <AgentGrid />
+          <ExecutionDashboard planId={planId} />
         </div>
       </main>
     </div>
   );
 }
+

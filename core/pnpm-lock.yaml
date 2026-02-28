@@ -8,9 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@ai-sdk/anthropic':
-        specifier: ^3.0.49
-        version: 3.0.49(zod@4.3.6)
+      '@ai-sdk/mistral':
+        specifier: ^2.0.25
+        version: 2.0.28(zod@4.3.6)
       '@browserbasehq/sdk':
         specifier: ^2.7.0
         version: 2.7.0
@@ -131,12 +131,6 @@ packages:
 
   '@ai-sdk/anthropic@2.0.67':
     resolution: {integrity: sha512-hGtsfU1Dh1r9oBfctZy9+Wb8nSPiD8hBYIVYLGbFSPRrfliyBysJFaenHOGYR0Rd2R8O9ow2dxi05Qk5awerBw==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/anthropic@3.0.49':
-    resolution: {integrity: sha512-EU/odEtJeqAWY9gRgCBQEK3m1p9nXPdGuvy4XF4q5TFJqUD+x5ykGUpJUL7Eo+pzXddHP+VyP8yW12FpB9EsYA==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -5210,12 +5204,6 @@ snapshots:
       zod: 4.3.6
     optional: true
 
-  '@ai-sdk/anthropic@3.0.49(zod@4.3.6)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.15(zod@4.3.6)
-      zod: 4.3.6
-
   '@ai-sdk/azure@2.0.97(zod@4.3.6)':
     dependencies:
       '@ai-sdk/openai': 2.0.95(zod@4.3.6)
@@ -5284,7 +5272,6 @@ snapshots:
       '@ai-sdk/provider': 2.0.1
       '@ai-sdk/provider-utils': 3.0.21(zod@4.3.6)
       zod: 4.3.6
-    optional: true
 
   '@ai-sdk/openai-compatible@1.0.33(zod@4.3.6)':
     dependencies:

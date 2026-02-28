@@ -1,5 +1,4 @@
 import Browserbase from "@browserbasehq/sdk";
-import { nanoid } from "nanoid";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { agentEvents, tasks } from "../db/schema";
@@ -10,7 +9,7 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
 
   const runningTasks = await db.query.tasks.findMany({
     where: eq(tasks.status, "running"),
-    columns: { id: true, browserbaseSessionId: true },
+    columns: { id: true, planId: true, browserbaseSessionId: true },
   });
 
   if (runningTasks.length === 0) return { stopped: 0, requestedRelease: 0 };
@@ -63,24 +62,48 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
 
       let sequenceNum = (seqMap.get(t.id) ?? -1) + 1;
 
-      const errorEvent = {
-        id: nanoid(),
-        taskId: t.id,
-        type: "error" as const,
-        data: { error: reason },
-        sequenceNum: sequenceNum++,
-      };
-      const failedEvent = {
-        id: nanoid(),
-        taskId: t.id,
-        type: "failed" as const,
-        data: { error: reason },
-        sequenceNum: sequenceNum++,
-      };
+      const [errorEvent, failedEvent] = await db
+        .insert(agentEvents)
+        .values([
+          {
+            planId: t.planId,
+            taskId: t.id,
+            type: "error",
+            data: { error: reason },
+            sequenceNum: sequenceNum++,
+          },
+          {
+            planId: t.planId,
+            taskId: t.id,
+            type: "failed",
+            data: { error: reason },
+            sequenceNum: sequenceNum++,
+          },
+        ])
+        .returning({
+          id: agentEvents.id,
+          planId: agentEvents.planId,
+          taskId: agentEvents.taskId,
+          data: agentEvents.data,
+          sequenceNum: agentEvents.sequenceNum,
+        });
 
-      await db.insert(agentEvents).values([errorEvent, failedEvent]);
-      emitAgentEvent(errorEvent);
-      emitAgentEvent(failedEvent);
+      emitAgentEvent({
+        id: errorEvent.id,
+        planId: errorEvent.planId,
+        taskId: errorEvent.taskId,
+        type: "error",
+        data: errorEvent.data,
+        sequenceNum: errorEvent.sequenceNum,
+      });
+      emitAgentEvent({
+        id: failedEvent.id,
+        planId: failedEvent.planId,
+        taskId: failedEvent.taskId,
+        type: "failed",
+        data: failedEvent.data,
+        sequenceNum: failedEvent.sequenceNum,
+      });
 
       return true;
     })

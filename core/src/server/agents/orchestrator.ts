@@ -51,7 +51,7 @@ export async function orchestrate(planId: string) {
     for (let i = 0; i < taskRecords.length; i += maxParallel) {
       const batch = taskRecords.slice(i, i + maxParallel);
       const batchResults = await Promise.allSettled(
-        batch.map((task) => runAgent(task.id, task.instruction))
+        batch.map((task) => runAgent(planId, task.id, task.instruction))
       );
       results.push(...batchResults);
     }

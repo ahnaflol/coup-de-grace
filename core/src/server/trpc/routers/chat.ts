@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../index";
 import { sessions, plans } from "../../db/schema";
-import { anthropic } from "@ai-sdk/anthropic";
+import { mistral } from "@ai-sdk/mistral";
 import { generateText } from "ai";
 
 const planSchema = z.object({
@@ -31,6 +31,7 @@ Rules:
 - Each task should be independently executable by a browser agent
 - Instructions should be specific and actionable (click, type, navigate, verify, etc.)
 - Keep tasks focused - one logical test per task
+- If the user requests testing across N sessions (e.g. \"across 5 user sessions\"), output N tasks (one per session) when feasible. Make each task explicitly start from a fresh session and label them \"Session 1\", \"Session 2\", etc.
 - Include the target URL in each task's instruction if relevant
 - No markdown, no explanation, just the JSON`;
 
@@ -53,9 +54,9 @@ export const chatRouter = router({
         sessionId = session.id;
       }
 
-      // Generate plan with Claude
+      // Generate plan with Mistral
       const { text } = await generateText({
-        model: anthropic("claude-sonnet-4-20250514"),
+        model: mistral("mistral-large-latest"),
         system: SYSTEM_PROMPT,
         prompt: input.message,
       });

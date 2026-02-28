@@ -1,43 +1,67 @@
 "use client";
 
-import { usePlanningStore } from "@/stores/use-planning-store";
+import { useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PhaseStepper } from "@/components/layout/phase-stepper";
-import { ModeSelector } from "./mode-selector";
 import { PromptInput } from "./prompt-input";
 import { ChatInterface } from "./chat-interface";
 import { PlanReview } from "./plan-review";
-import { motion, AnimatePresence } from "framer-motion";
 import type { PlanningStep } from "@/types";
 
-const stepComponents: Record<PlanningStep, React.ComponentType> = {
-  mode: ModeSelector,
-  prompt: PromptInput,
-  chat: ChatInterface,
-  review: PlanReview,
-};
+function parseStep(value: string | null): PlanningStep {
+  if (value === "chat" || value === "review") return value;
+  return "prompt";
+}
+
+function buildPlanUrl(params: {
+  step: PlanningStep;
+  planId?: string | null;
+  sessionId?: string | null;
+}) {
+  const search = new URLSearchParams();
+  search.set("step", params.step);
+  if (params.planId) search.set("planId", params.planId);
+  if (params.sessionId) search.set("sessionId", params.sessionId);
+  return `/plan?${search.toString()}`;
+}
 
 export function PlanningFlow() {
-  const { currentStep, setStep } = usePlanningStore();
-  const StepComponent = stepComponents[currentStep];
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const step = useMemo(
+    () => parseStep(searchParams.get("step")),
+    [searchParams]
+  );
+  const planId = searchParams.get("planId");
+  const sessionId = searchParams.get("sessionId");
+
+  const goToStep = (nextStep: PlanningStep) => {
+    router.push(buildPlanUrl({ step: nextStep, planId, sessionId }));
+  };
 
   return (
     <div className="flex flex-1 flex-col gap-6 py-6">
       <div className="flex justify-center px-4">
-        <PhaseStepper currentStep={currentStep} onStepClick={setStep} />
+        <PhaseStepper currentStep={step} />
       </div>
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentStep}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ duration: 0.2, ease: "easeInOut" }}
-          className="flex flex-1 flex-col"
-        >
-          <StepComponent />
-        </motion.div>
-      </AnimatePresence>
+      {step === "prompt" && <PromptInput />}
+      {step === "chat" && (
+        <ChatInterface
+          planId={planId ?? undefined}
+          sessionId={sessionId ?? undefined}
+          onAccept={() => goToStep("review")}
+        />
+      )}
+      {step === "review" && (
+        <PlanReview
+          planId={planId ?? undefined}
+          sessionId={sessionId ?? undefined}
+          onBackToChat={() => goToStep("chat")}
+        />
+      )}
     </div>
   );
 }
+

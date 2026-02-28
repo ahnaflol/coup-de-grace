@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, publicProcedure } from "../index";
 import { plans } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { mistral } from "@ai-sdk/mistral";
 import { generateText } from "ai";
 
 const planSchema = z.object({
@@ -23,7 +23,9 @@ export const planRouter = router({
         where: eq(plans.id, input.planId),
         with: { tasks: true },
       });
-      return plan ?? null;
+      if (!plan) return null;
+      const parsed = planSchema.parse(JSON.parse(plan.content));
+      return { ...plan, parsed };
     }),
 
   approve: publicProcedure
@@ -51,7 +53,7 @@ export const planRouter = router({
       if (!existing) throw new Error("Plan not found");
 
       const { text } = await generateText({
-        model: anthropic("claude-sonnet-4-20250514"),
+        model: mistral("mistral-large-latest"),
         system: `You are a test planning assistant. You previously generated the following test plan:
 
 ${existing.content}

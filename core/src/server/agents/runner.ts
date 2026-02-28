@@ -3,10 +3,9 @@ import Browserbase from "@browserbasehq/sdk";
 import { db } from "../db";
 import { tasks, agentEvents } from "../db/schema";
 import { and, eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { emitAgentEvent } from "./events";
 
-export async function runAgent(taskId: string, instruction: string) {
+export async function runAgent(planId: string, taskId: string, instruction: string) {
   let sequenceNum = 0;
   let stagehand: Stagehand | null = null;
 
@@ -32,27 +31,42 @@ export async function runAgent(taskId: string, instruction: string) {
     if (bbSessionId) {
       const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! });
       const debugInfo = await bb.sessions.debug(bbSessionId);
-      liveViewUrl = debugInfo.debuggerFullscreenUrl;
+      liveViewUrl = debugInfo.debuggerFullscreenUrl ?? undefined;
 
       await db
         .update(tasks)
-        .set({ browserbaseSessionId: bbSessionId, liveViewUrl })
+        .set({ browserbaseSessionId: bbSessionId, liveViewUrl: liveViewUrl ?? null })
         .where(eq(tasks.id, taskId));
     }
 
     // Emit session_ready event with live view URL
-    const readyEvent = {
-      id: nanoid(),
-      taskId,
-      type: "session_ready" as const,
-      data: {
-        browserbaseSessionId: bbSessionId,
-        liveViewUrl,
-      },
-      sequenceNum: sequenceNum++,
-    };
-    await db.insert(agentEvents).values(readyEvent);
-    emitAgentEvent(readyEvent);
+    const [readyEvent] = await db
+      .insert(agentEvents)
+      .values({
+        planId,
+        taskId,
+        type: "session_ready",
+        data: {
+          browserbaseSessionId: bbSessionId ?? null,
+          liveViewUrl: liveViewUrl ?? null,
+        },
+        sequenceNum: sequenceNum++,
+      })
+      .returning({
+        id: agentEvents.id,
+        planId: agentEvents.planId,
+        taskId: agentEvents.taskId,
+        data: agentEvents.data,
+        sequenceNum: agentEvents.sequenceNum,
+      });
+    emitAgentEvent({
+      id: readyEvent.id,
+      planId: readyEvent.planId,
+      taskId: readyEvent.taskId,
+      type: "session_ready",
+      data: readyEvent.data,
+      sequenceNum: readyEvent.sequenceNum,
+    });
 
     // Create and execute agent
     const agent = stagehand.agent({
@@ -78,15 +92,30 @@ export async function runAgent(taskId: string, instruction: string) {
     if (!completedRow) return;
 
     // Emit completed event
-    const completedEvent = {
-      id: nanoid(),
-      taskId,
-      type: "completed" as const,
-      data: { result },
-      sequenceNum: sequenceNum++,
-    };
-    await db.insert(agentEvents).values(completedEvent);
-    emitAgentEvent(completedEvent);
+    const [completedEvent] = await db
+      .insert(agentEvents)
+      .values({
+        planId,
+        taskId,
+        type: "completed",
+        data: { result },
+        sequenceNum: sequenceNum++,
+      })
+      .returning({
+        id: agentEvents.id,
+        planId: agentEvents.planId,
+        taskId: agentEvents.taskId,
+        data: agentEvents.data,
+        sequenceNum: agentEvents.sequenceNum,
+      });
+    emitAgentEvent({
+      id: completedEvent.id,
+      planId: completedEvent.planId,
+      taskId: completedEvent.taskId,
+      type: "completed",
+      data: completedEvent.data,
+      sequenceNum: completedEvent.sequenceNum,
+    });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -104,25 +133,55 @@ export async function runAgent(taskId: string, instruction: string) {
     if (!failedRow) return;
 
     // Emit error + failed events
-    const errorEvent = {
-      id: nanoid(),
-      taskId,
-      type: "error" as const,
-      data: { error: errorMessage },
-      sequenceNum: sequenceNum++,
-    };
-    await db.insert(agentEvents).values(errorEvent);
-    emitAgentEvent(errorEvent);
+    const [errorEvent] = await db
+      .insert(agentEvents)
+      .values({
+        planId,
+        taskId,
+        type: "error",
+        data: { error: errorMessage },
+        sequenceNum: sequenceNum++,
+      })
+      .returning({
+        id: agentEvents.id,
+        planId: agentEvents.planId,
+        taskId: agentEvents.taskId,
+        data: agentEvents.data,
+        sequenceNum: agentEvents.sequenceNum,
+      });
+    emitAgentEvent({
+      id: errorEvent.id,
+      planId: errorEvent.planId,
+      taskId: errorEvent.taskId,
+      type: "error",
+      data: errorEvent.data,
+      sequenceNum: errorEvent.sequenceNum,
+    });
 
-    const failedEvent = {
-      id: nanoid(),
-      taskId,
-      type: "failed" as const,
-      data: { error: errorMessage },
-      sequenceNum: sequenceNum++,
-    };
-    await db.insert(agentEvents).values(failedEvent);
-    emitAgentEvent(failedEvent);
+    const [failedEvent] = await db
+      .insert(agentEvents)
+      .values({
+        planId,
+        taskId,
+        type: "failed",
+        data: { error: errorMessage },
+        sequenceNum: sequenceNum++,
+      })
+      .returning({
+        id: agentEvents.id,
+        planId: agentEvents.planId,
+        taskId: agentEvents.taskId,
+        data: agentEvents.data,
+        sequenceNum: agentEvents.sequenceNum,
+      });
+    emitAgentEvent({
+      id: failedEvent.id,
+      planId: failedEvent.planId,
+      taskId: failedEvent.taskId,
+      type: "failed",
+      data: failedEvent.data,
+      sequenceNum: failedEvent.sequenceNum,
+    });
   } finally {
     if (stagehand) {
       await stagehand.close().catch(() => {});

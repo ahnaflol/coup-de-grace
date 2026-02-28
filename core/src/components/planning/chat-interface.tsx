@@ -1,77 +1,185 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { usePlanningStore } from "@/stores/use-planning-store";
-import { useAutoScroll } from "@/hooks/use-auto-scroll";
-import { MOCK_CHAT_MESSAGES, MOCK_PLAN_STEPS } from "@/lib/mock-data";
-import { ChatMessage } from "./chat-message";
-import { ChatInput } from "./chat-input";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArrowRight, Loader2 } from "lucide-react";
-import type { ChatMessage as ChatMessageType } from "@/types";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
+import { useAutoScroll } from "@/hooks/use-auto-scroll";
+import { ChatMessage } from "./chat-message";
+import { ChatInput } from "./chat-input";
+import type { ChatMessage as ChatMessageType, ParsedPlan } from "@/types";
 
-export function ChatInterface() {
-  const { chatMessages, addChatMessage, setStep, setPlanSteps } =
-    usePlanningStore();
+interface ChatInterfaceProps {
+  planId?: string;
+  sessionId?: string;
+  onAccept: () => void;
+}
+
+function buildPromptUrl() {
+  const search = new URLSearchParams();
+  search.set("step", "prompt");
+  return `/plan?${search.toString()}`;
+}
+
+function PlanProposalCard({ plan }: { plan: ParsedPlan }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Current plan</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div>
+          <p className="text-sm font-semibold">{plan.title}</p>
+          <p className="text-xs text-muted-foreground">
+            {plan.tasks.length} task{plan.tasks.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <div className="space-y-2">
+          {plan.tasks.map((t, idx) => (
+            <div key={`${t.title}-${idx}`} className="rounded-lg border p-3">
+              <p className="text-sm font-medium">
+                {idx + 1}. {t.title}
+              </p>
+              <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
+                {t.instruction}
+              </p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function ChatInterface({ planId, onAccept }: ChatInterfaceProps) {
+  const router = useRouter();
+  const planQuery = trpc.plan.get.useQuery(
+    { planId: planId ?? "" },
+    { enabled: Boolean(planId) }
+  );
+  const requestChanges = trpc.plan.requestChanges.useMutation();
+
+  const [plan, setPlan] = useState<ParsedPlan | null>(null);
+  const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [isTyping, setIsTyping] = useState(false);
-  const hasInitialized = useRef(false);
-  const scrollTrigger = chatMessages.length + (isTyping ? 1 : 0);
-  const scrollRef = useAutoScroll<HTMLDivElement>(scrollTrigger);
+  const hasSeeded = useRef(false);
 
   useEffect(() => {
-    if (!hasInitialized.current && chatMessages.length === 0) {
-      hasInitialized.current = true;
-      MOCK_CHAT_MESSAGES.forEach((msg) => addChatMessage(msg));
-    }
-  }, [chatMessages.length, addChatMessage]);
+    if (!planQuery.data || hasSeeded.current) return;
+    hasSeeded.current = true;
 
-  const handleSend = (content: string) => {
+    setPlan(planQuery.data.parsed);
+
+    const seed: ChatMessageType[] = [
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: planQuery.data.userPrompt,
+        timestamp: new Date(),
+      },
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content:
+          "Here’s a draft plan. Tell me what you want to change and I’ll update it.",
+        timestamp: new Date(),
+      },
+    ];
+    setMessages(seed);
+  }, [planQuery.data]);
+
+  const scrollTrigger = messages.length + (isTyping ? 1 : 0);
+  const scrollRef = useAutoScroll<HTMLDivElement>(scrollTrigger);
+
+  const canAccept = useMemo(() => Boolean(planId && plan), [planId, plan]);
+
+  const handleSend = async (content: string) => {
+    if (!planId) return;
+
     const userMessage: ChatMessageType = {
       id: crypto.randomUUID(),
       role: "user",
       content,
       timestamp: new Date(),
     };
-    addChatMessage(userMessage);
+    setMessages((prev) => [...prev, userMessage]);
 
     setIsTyping(true);
-    setTimeout(() => {
+    try {
+      const updated = await requestChanges.mutateAsync({
+        planId,
+        feedback: content,
+      });
+      setPlan(updated.parsed);
+
       const assistantMessage: ChatMessageType = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content:
-          "I've updated the plan based on your feedback. The execution will now include the additional requirements. You can review the final plan when ready.",
+        content: "Updated the plan. Anything else you’d like to adjust?",
         timestamp: new Date(),
       };
-      addChatMessage(assistantMessage);
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to update plan";
+      toast.error(message);
+      const assistantMessage: ChatMessageType = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `I couldn't update the plan: ${message}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
-  const handleProceedToReview = () => {
-    setPlanSteps(MOCK_PLAN_STEPS);
-    setStep("review");
-  };
+  if (!planId) {
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-4 px-4">
+        <h2 className="text-lg font-semibold">Refine your plan</h2>
+        <p className="text-sm text-muted-foreground">
+          No plan selected. Generate a plan first.
+        </p>
+        <Button onClick={() => router.push(buildPromptUrl())} variant="outline">
+          Back to prompt
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 h-[calc(100vh-13rem)]">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">Refine your plan</h2>
           <p className="text-sm text-muted-foreground">
-            Chat with the AI to fine-tune agent tasks.
+            Chat with the assistant to fine-tune your tasks.
           </p>
         </div>
-        <Button onClick={handleProceedToReview} variant="outline" className="gap-2">
-          Review Plan
+        <Button onClick={onAccept} disabled={!canAccept} className="gap-2">
+          Accept plan
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 rounded-lg border bg-card p-4">
+      {planQuery.isLoading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading plan…
+        </div>
+      )}
+
+      {plan && <PlanProposalCard plan={plan} />}
+
+      <ScrollArea className="h-[calc(100vh-28rem)] rounded-lg border bg-card p-4">
         <div ref={scrollRef} className="space-y-4">
-          {chatMessages.map((msg) => (
+          {messages.map((msg) => (
             <ChatMessage key={msg.id} message={msg} />
           ))}
           {isTyping && (
@@ -91,7 +199,8 @@ export function ChatInterface() {
         </div>
       </ScrollArea>
 
-      <ChatInput onSend={handleSend} disabled={isTyping} />
+      <ChatInput onSend={handleSend} disabled={isTyping || requestChanges.isPending} />
     </div>
   );
 }
+
