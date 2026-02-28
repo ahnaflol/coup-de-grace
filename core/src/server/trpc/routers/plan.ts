@@ -3,7 +3,7 @@ import { router, publicProcedure } from "../index";
 import { plans } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { mistral } from "@ai-sdk/mistral";
-import { generateText } from "ai";
+import { generateText, Output } from "ai";
 
 const planSchema = z.object({
   title: z.string(),
@@ -52,28 +52,16 @@ export const planRouter = router({
       });
       if (!existing) throw new Error("Plan not found");
 
-      const { text } = await generateText({
+      const { output: parsed } = await generateText({
         model: mistral("mistral-large-latest"),
         system: `You are a test planning assistant. You previously generated the following test plan:
 
 ${existing.content}
 
-The user wants changes. Regenerate the plan incorporating their feedback.
-
-Output ONLY valid JSON with this exact shape:
-{
-  "title": "Short plan title",
-  "tasks": [
-    {
-      "title": "Short task title",
-      "instruction": "Detailed step-by-step instruction for the browser agent"
-    }
-  ]
-}`,
+The user wants changes. Regenerate the plan incorporating their feedback.`,
         prompt: input.feedback,
+        output: Output.object({ schema: planSchema }),
       });
-
-      const parsed = planSchema.parse(JSON.parse(text));
 
       const [updated] = await ctx.db
         .update(plans)

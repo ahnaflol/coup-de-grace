@@ -2,12 +2,12 @@ import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/layout/app-header";
 import { ExecutionDashboard } from "@/components/execution/execution-dashboard";
 
-export default function ExecutePage({
+export default async function ExecutePage({
   searchParams,
 }: {
-  searchParams: { planId?: string };
+  searchParams: Promise<{ planId?: string }>;
 }) {
-  const planId = searchParams.planId;
+  const { planId } = await searchParams;
   if (!planId) redirect("/plan");
 
   return (

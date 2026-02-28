@@ -24,9 +24,12 @@ export async function orchestrate(planId: string) {
 
     const content: PlanContent = JSON.parse(plan.content);
 
+    // TODO: restore all tasks once parallelism is re-enabled
+    const tasksToRun = content.tasks.slice(0, 1);
+
     // Create task records
     const taskRecords = await Promise.all(
-      content.tasks.map((t) =>
+      tasksToRun.map((t) =>
         db
           .insert(tasks)
           .values({
@@ -45,7 +48,7 @@ export async function orchestrate(planId: string) {
       .set({ status: "executing", updatedAt: new Date() })
       .where(eq(plans.id, planId));
 
-    const maxParallel = ORCHESTRATOR_MAX_PARALLEL_TASKS;
+    const maxParallel = 1; // TODO: restore parallelism (ORCHESTRATOR_MAX_PARALLEL_TASKS)
     const results: PromiseSettledResult<unknown>[] = [];
 
     for (let i = 0; i < taskRecords.length; i += maxParallel) {
