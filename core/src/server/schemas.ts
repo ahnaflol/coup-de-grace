@@ -11,7 +11,7 @@ export const planSchema = z.object({
   startUrl: z.string(),
   credentials: z
     .object({
-      email: z.string(),
+      username: z.string(),
       password: z.string(),
     })
     .optional(),

@@ -120,6 +120,7 @@ function collectReasoningText(messages: UIMessage[]): string {
 export function PlanningFlow() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const utils = trpc.useUtils();
 
   const { messages, sendMessage, addToolOutput, status } = usePlannerChat();
 
