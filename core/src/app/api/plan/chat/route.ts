@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     system: PLANNER_SYSTEM_PROMPT,
     messages: modelMessages,
     toolChoice: "required",
-    stopWhen: stepCountIs(5),
+    stopWhen: stepCountIs(25),
     tools: {
       ask_questions: tool({
         inputSchema: z.object({
