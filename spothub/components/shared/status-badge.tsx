@@ -21,8 +21,8 @@ const COLOR_MAP: Record<StatusVariant, Record<string, string>> = {
     presentation_scheduled: "bg-purple-100 text-purple-700",
     decision_maker_bought_in: "bg-amber-100 text-amber-700",
     contract_sent: "bg-orange-100 text-orange-700",
-    closed_won: "bg-green-100 text-green-700",
-    closed_lost: "bg-red-100 text-red-700",
+    closed_won: "bg-red-100 text-red-700",
+    closed_lost: "bg-green-100 text-green-700",
   },
   ticket_status: {
     new: "bg-blue-100 text-blue-700",

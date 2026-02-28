@@ -38,7 +38,7 @@ export function EntityFormModal({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={onSubmit} disabled={isLoading}>
+          <Button onClick={onSubmit}>
             {isLoading ? "Saving..." : "Save"}
           </Button>
         </DialogFooter>

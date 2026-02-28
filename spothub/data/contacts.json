@@ -10108,5 +10108,19 @@
     ],
     "createdAt": "2025-11-19T06:54:27.891Z",
     "updatedAt": "2026-01-28T14:34:32.236Z"
+  },
+  {
+    "firstName": "ddasdasdsdasdasdasdasdaaaaasdasdasdasdasdadaaaaaaa",
+    "lastName": "asdasdzxczxfwefz",
+    "email": "a@gmail.com",
+    "phone": "123123123123",
+    "lifecycleStage": "marketing_qualified",
+    "owner": "owner-2",
+    "jobTitle": "asd",
+    "city": "",
+    "state": "as",
+    "id": "3ef38e16-4e66-485e-bdbd-a4ae07d1dc8d",
+    "createdAt": "2026-02-28T03:59:39.532Z",
+    "updatedAt": "2026-02-28T04:00:09.081Z"
   }
 ]

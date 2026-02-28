@@ -3,19 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  LayoutDashboard,
   Users,
   Building2,
   DollarSign,
   Ticket,
+  Upload,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Contacts", href: "/contacts", icon: Users },
   { label: "Companies", href: "/companies", icon: Building2 },
   { label: "Deals", href: "/deals", icon: DollarSign },
   { label: "Tickets", href: "/tickets", icon: Ticket },
+  { label: "Import", href: "/import", icon: Upload },
 ];
 
 export function Sidebar() {

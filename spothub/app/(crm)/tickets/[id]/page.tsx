@@ -7,6 +7,7 @@ import { DetailLayout } from "@/components/detail-page/detail-layout";
 import { DetailTopbar } from "@/components/detail-page/detail-topbar";
 import { AboutSidebar } from "@/components/detail-page/about-sidebar";
 import { ActivityTimeline } from "@/components/detail-page/activity-timeline";
+import { NotesSection } from "@/components/detail-page/notes-section";
 import { AssociationsSidebar } from "@/components/detail-page/associations-sidebar";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
@@ -135,7 +136,10 @@ export default function TicketDetailPage({
         />
       }
       mainContent={
-        <ActivityTimeline activities={activities} isLoading={isLoading} />
+        <div className="space-y-6">
+          <ActivityTimeline activities={activities} isLoading={isLoading} />
+          <NotesSection entityType="ticket" entityId={id} />
+        </div>
       }
       rightSidebar={<AssociationsSidebar associations={associations} />}
     />
