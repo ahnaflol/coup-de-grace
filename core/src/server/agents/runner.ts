@@ -125,6 +125,8 @@ export async function runAgent(input: {
         type: "step",
         data: {
           number: step.number,
+          memory: step.memory,
+          evaluationPreviousGoal: step.evaluationPreviousGoal,
           nextGoal: step.nextGoal,
           url: step.url,
           screenshotUrl: step.screenshotUrl ?? null,

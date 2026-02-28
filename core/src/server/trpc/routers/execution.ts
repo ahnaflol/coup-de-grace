@@ -177,6 +177,7 @@ export const executionRouter = router({
           liveUrl: tasks.liveUrl,
           browserUseSessionId: tasks.browserUseSessionId,
           shareUrl: tasks.shareUrl,
+          result: tasks.result,
         })
         .from(tasks)
         .where(eq(tasks.planId, input.planId));

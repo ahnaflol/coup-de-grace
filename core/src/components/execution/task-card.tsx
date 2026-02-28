@@ -1,10 +1,38 @@
 "use client";
 
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { TaskStatusBadge } from "./task-status-badge";
-import { TaskEventLog } from "./task-event-log";
+import { TaskDetailSheet } from "./task-detail-sheet";
+import { Button } from "@/components/ui/button";
+import { CheckCircle2, XCircle, Info } from "lucide-react";
 import type { TaskStatus } from "@/types";
 import type { TaskEventWithTime } from "./execution-dashboard";
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function extractResultInfo(result: unknown) {
+  if (!isRecord(result)) return null;
+  const output = isRecord(result.output) ? result.output : null;
+  const outcome =
+    output && typeof output.outcome === "string" ? output.outcome : null;
+  const summary =
+    output && typeof output.summary === "string" ? output.summary : null;
+  const stepsCompleted =
+    output && Array.isArray(output.stepsCompleted)
+      ? (output.stepsCompleted as string[])
+      : [];
+  const isSuccess =
+    typeof result.isSuccess === "boolean" ? result.isSuccess : null;
+  const passed = outcome ? outcome === "pass" : isSuccess === true;
+  return { passed, outcome, summary, stepCount: stepsCompleted.length };
+}
+
+const STATUS_DOT: Record<TaskStatus, { color: string; pulse: boolean }> = {
+  running:   { color: "bg-emerald-400", pulse: true },
+  completed: { color: "bg-emerald-600", pulse: false },
+  failed:    { color: "bg-red-500",     pulse: false },
+  pending:   { color: "bg-zinc-600",    pulse: false },
+};
 
 export function TaskCard({
   task,
@@ -19,54 +47,102 @@ export function TaskCard({
     liveUrl: string | null;
     browserUseSessionId: string | null;
     shareUrl: string | null;
+    result: unknown;
   };
   events: TaskEventWithTime[];
 }) {
-  const viewerUrl = task.shareUrl ?? task.liveUrl;
+  const dot = STATUS_DOT[task.status];
+  const isDone = task.status === "completed" || task.status === "failed";
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-md">
-      <CardHeader className="p-3 pb-0">
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-0.5 min-w-0">
-            <h3 className="text-sm font-semibold truncate">{task.title}</h3>
-            <p className="text-xs text-muted-foreground truncate">
+    <div className="group relative overflow-hidden bg-zinc-950">
+      {/* Live browser iframe, result overlay, or placeholder */}
+      {isDone ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950">
+          {(() => {
+            const info = extractResultInfo(task.result);
+            const passed = info?.passed ?? task.status === "completed";
+            return (
+              <>
+                {passed ? (
+                  <CheckCircle2 className="size-10 text-emerald-500" />
+                ) : (
+                  <XCircle className="size-10 text-red-500" />
+                )}
+                <span className="mt-2 text-sm font-bold tracking-widest uppercase text-zinc-300">
+                  {passed ? "PASS" : "FAIL"}
+                </span>
+                {info?.summary && (
+                  <p className="mt-1.5 text-xs text-zinc-500 text-center max-w-[80%] line-clamp-2">
+                    {info.summary}
+                  </p>
+                )}
+                {info && info.stepCount > 0 && (
+                  <span className="mt-1 text-[10px] text-zinc-600">
+                    {info.stepCount} step{info.stepCount !== 1 ? "s" : ""} completed
+                  </span>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      ) : task.liveUrl ? (
+        <iframe
+          src={task.liveUrl}
+          className="absolute inset-0 h-full w-full border-0"
+          allow="clipboard-read; clipboard-write"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-xs text-zinc-700 text-center px-4 leading-relaxed max-w-[80%]">
+            {task.status === "pending" ? task.title : "Connecting..."}
+          </span>
+        </div>
+      )}
+
+      {/* Status dot — always visible, bottom-left */}
+      <div className="absolute bottom-2 left-2 z-10">
+        <span
+          className={`block size-2 rounded-full ${dot.color} ${dot.pulse ? "animate-pulse" : ""}`}
+        />
+      </div>
+
+      {/* Hover overlay — fades in from bottom */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none group-hover:pointer-events-auto z-20">
+        {/* Gradient backdrop */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+
+        {/* Content pinned to bottom */}
+        <div className="absolute bottom-0 inset-x-0 p-3 space-y-2">
+          <div>
+            <h3 className="text-sm font-semibold text-white truncate">
+              {task.title}
+            </h3>
+            <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed mt-0.5">
               {task.instruction}
             </p>
           </div>
-          <TaskStatusBadge status={task.status} />
-        </div>
-      </CardHeader>
-      <CardContent className="p-3 space-y-3">
-        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-lg bg-muted">
-          {task.liveUrl ? (
-            <iframe
-              src={task.liveUrl}
-              className="absolute inset-0 h-full w-full border-0"
-              allow="clipboard-read; clipboard-write"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
-              Live view not available yet.
-            </div>
-          )}
-        </div>
 
-        <div className="flex items-center justify-between gap-2">
-          <TaskEventLog taskTitle={task.title} events={events} />
-          {viewerUrl && (
-            <a
-              href={viewerUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
+          <div className="flex items-center gap-1.5">
+            <TaskDetailSheet
+              taskTitle={task.title}
+              result={task.result}
+              events={events}
+              status={task.status}
             >
-              Open live view
-            </a>
-          )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 h-7 text-xs text-zinc-300 hover:text-white hover:bg-white/10"
+              >
+                <Info className="h-3.5 w-3.5" />
+                Details
+              </Button>
+            </TaskDetailSheet>
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

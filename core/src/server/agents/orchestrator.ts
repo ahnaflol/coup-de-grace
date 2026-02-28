@@ -21,8 +21,7 @@ export async function orchestrate(planId: string) {
 
     const content: Plan = JSON.parse(plan.content);
 
-    // TODO: restore all tasks once parallelism is re-enabled
-    const tasksToRun = content.tasks.slice(0, 1);
+    const tasksToRun = content.tasks;
 
     // Create task records
     const taskRecords = await Promise.all(
@@ -41,16 +40,19 @@ export async function orchestrate(planId: string) {
     );
 
     for (const task of taskRecords) {
-      if (!task.startUrl) {
-        throw new Error(`Task ${task.id} missing startUrl`);
-      }
-      await runAgent({
-        planId,
-        taskId: task.id,
-        instruction: task.instruction,
-        startUrl: task.startUrl,
-      });
+      if (!task.startUrl) throw new Error(`Task ${task.id} missing startUrl`);
     }
+
+    await Promise.all(
+      taskRecords.map((task) =>
+        runAgent({
+          planId,
+          taskId: task.id,
+          instruction: task.instruction,
+          startUrl: task.startUrl!,
+        })
+      )
+    );
 
     const updatedTasks = await db
       .select()

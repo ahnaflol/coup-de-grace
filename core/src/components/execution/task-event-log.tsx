@@ -2,13 +2,13 @@
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollText } from "lucide-react";
 import type { AgentEventType } from "@/types";
@@ -63,19 +63,19 @@ export function TaskEventLog({
   events: TaskEventWithTime[];
 }) {
   return (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1.5 h-7 text-xs">
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="gap-1.5 h-7 text-xs text-zinc-300 hover:text-white hover:bg-white/10">
           <ScrollText className="h-3.5 w-3.5" />
           Logs ({events.length})
         </Button>
-      </SheetTrigger>
-      <SheetContent className="w-full sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>{taskTitle} - Logs</SheetTitle>
-          <SheetDescription>{events.length} events received</SheetDescription>
-        </SheetHeader>
-        <ScrollArea className="mt-4 h-[calc(100vh-8rem)]">
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>{taskTitle}</DialogTitle>
+          <DialogDescription>{events.length} events received</DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="flex-1 min-h-0">
           <div className="space-y-3 pr-4">
             {events.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">
@@ -109,7 +109,7 @@ export function TaskEventLog({
             )}
           </div>
         </ScrollArea>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
