@@ -28,6 +28,7 @@ import { QuestionOverlay } from "./question-overlay";
 import { CredentialsOverlay } from "./credentials-overlay";
 import { PlanProposalOverlay } from "./plan-proposal-overlay";
 import { PlanReview } from "./plan-review";
+import { trpc } from "@/lib/trpc";
 
 type Phase = "initial" | "thinking" | "finalized";
 
