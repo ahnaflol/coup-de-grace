@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../index";
-import { sessions, plans } from "../../db/schema";
+import { plans } from "../../db/schema";
 import { mistral } from "@ai-sdk/mistral";
 import { generateText, Output } from "ai";
 
@@ -39,21 +39,10 @@ export const chatRouter = router({
   sendMessage: publicProcedure
     .input(
       z.object({
-        sessionId: z.string().optional(),
         message: z.string(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Create session if needed
-      let sessionId = input.sessionId;
-      if (!sessionId) {
-        const [session] = await ctx.db
-          .insert(sessions)
-          .values({ title: input.message.slice(0, 100) })
-          .returning();
-        sessionId = session.id;
-      }
-
       // Generate plan with Mistral
       const { output: parsed } = await generateText({
         model: mistral("mistral-large-latest"),
@@ -66,13 +55,12 @@ export const chatRouter = router({
       const [plan] = await ctx.db
         .insert(plans)
         .values({
-          sessionId,
           userPrompt: input.message,
           content: JSON.stringify(parsed),
           status: "draft",
         })
         .returning();
 
-      return { sessionId, plan: { ...plan, parsed } };
+      return { plan: { ...plan, parsed } };
     }),
 });

@@ -7,10 +7,14 @@ import { emitAgentEvent } from "./events";
 export async function stopAllRunningTasks(input?: { reason?: string }) {
   const reason = input?.reason ?? "Stopped due to a new execution starting";
 
-  const runningTasks = await db.query.tasks.findMany({
-    where: eq(tasks.status, "running"),
-    columns: { id: true, planId: true, browserbaseSessionId: true },
-  });
+  const runningTasks = await db
+    .select({
+      id: tasks.id,
+      planId: tasks.planId,
+      browserbaseSessionId: tasks.browserbaseSessionId,
+    })
+    .from(tasks)
+    .where(eq(tasks.status, "running"));
 
   if (runningTasks.length === 0) return { stopped: 0, requestedRelease: 0 };
 
@@ -66,14 +70,12 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
         .insert(agentEvents)
         .values([
           {
-            planId: t.planId,
             taskId: t.id,
             type: "error",
             data: { error: reason },
             sequenceNum: sequenceNum++,
           },
           {
-            planId: t.planId,
             taskId: t.id,
             type: "failed",
             data: { error: reason },
@@ -82,7 +84,6 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
         ])
         .returning({
           id: agentEvents.id,
-          planId: agentEvents.planId,
           taskId: agentEvents.taskId,
           data: agentEvents.data,
           sequenceNum: agentEvents.sequenceNum,
@@ -90,7 +91,7 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
 
       emitAgentEvent({
         id: errorEvent.id,
-        planId: errorEvent.planId,
+        planId: t.planId,
         taskId: errorEvent.taskId,
         type: "error",
         data: errorEvent.data,
@@ -98,7 +99,7 @@ export async function stopAllRunningTasks(input?: { reason?: string }) {
       });
       emitAgentEvent({
         id: failedEvent.id,
-        planId: failedEvent.planId,
+        planId: t.planId,
         taskId: failedEvent.taskId,
         type: "failed",
         data: failedEvent.data,

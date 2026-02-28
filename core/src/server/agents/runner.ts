@@ -1,10 +1,39 @@
-import { Stagehand, AISdkClient } from "@browserbasehq/stagehand";
-import { createMistral } from "@ai-sdk/mistral";
+import { Stagehand } from "@browserbasehq/stagehand";
 import Browserbase from "@browserbasehq/sdk";
 import { db } from "../db";
 import { tasks, agentEvents } from "../db/schema";
 import { and, eq } from "drizzle-orm";
 import { emitAgentEvent } from "./events";
+
+async function persistAndEmitEvent(input: {
+  planId: string;
+  taskId: string;
+  type: "step" | "session_ready" | "error" | "completed" | "failed";
+  data: unknown;
+  sequenceNum: number;
+}) {
+  const { planId, taskId, type, data, sequenceNum } = input;
+
+  const [row] = await db
+    .insert(agentEvents)
+    .values({ taskId, type, data, sequenceNum })
+    .returning({
+      id: agentEvents.id,
+      taskId: agentEvents.taskId,
+      data: agentEvents.data,
+      sequenceNum: agentEvents.sequenceNum,
+    });
+
+  if (!row) return;
+  emitAgentEvent({
+    id: row.id,
+    planId,
+    taskId: row.taskId,
+    type,
+    data: row.data,
+    sequenceNum: row.sequenceNum,
+  });
+}
 
 export async function runAgent(
   planId: string,
@@ -27,16 +56,13 @@ export async function runAgent(
 
     // Init Stagehand with Browserbase
     console.log(`[runner] Initializing Stagehand with Browserbase`);
-    const mistralClient = new AISdkClient({
-      model: createMistral({ apiKey: process.env.MISTRAL_API_KEY! })(
-        "mistral-large-latest",
-      ),
-    });
+
     stagehand = new Stagehand({
       env: "BROWSERBASE",
       apiKey: process.env.BROWSERBASE_API_KEY,
       projectId: process.env.BROWSERBASE_PROJECT_ID,
-      llmClient: mistralClient,
+      // model: "mistral/codestral-2508",
+      model: "openai/gpt-5",
     });
     await stagehand.init();
     console.log(`[runner] Stagehand initialized`);
@@ -62,43 +88,25 @@ export async function runAgent(
     }
 
     // Emit session_ready event with live view URL
-    const [readyEvent] = await db
-      .insert(agentEvents)
-      .values({
-        planId,
-        taskId,
-        type: "session_ready",
-        data: {
-          browserbaseSessionId: bbSessionId ?? null,
-          liveViewUrl: liveViewUrl ?? null,
-        },
-        sequenceNum: sequenceNum++,
-      })
-      .returning({
-        id: agentEvents.id,
-        planId: agentEvents.planId,
-        taskId: agentEvents.taskId,
-        data: agentEvents.data,
-        sequenceNum: agentEvents.sequenceNum,
-      });
-    emitAgentEvent({
-      id: readyEvent.id,
-      planId: readyEvent.planId,
-      taskId: readyEvent.taskId,
+    await persistAndEmitEvent({
+      planId,
+      taskId,
       type: "session_ready",
-      data: readyEvent.data,
-      sequenceNum: readyEvent.sequenceNum,
+      data: {
+        browserbaseSessionId: bbSessionId ?? null,
+        liveViewUrl: liveViewUrl ?? null,
+      },
+      sequenceNum: sequenceNum++,
     });
 
     // Create and execute agent
-    console.log(
-      `[runner] Creating agent with model mistral-large-latest`,
-    );
+    console.log(`[runner] Creating agent with model mistral-large-latest`);
     const agent = stagehand.agent();
 
     console.log(`[runner] Executing agent | maxSteps=25`);
     const result = await agent.execute({
       instruction,
+      highlightCursor: true,
       maxSteps: 25,
     });
     console.log(`[runner] Agent execution complete | taskId=${taskId}`, result);
@@ -118,29 +126,12 @@ export async function runAgent(
     console.log(`[runner] Task marked as completed | taskId=${taskId}`);
 
     // Emit completed event
-    const [completedEvent] = await db
-      .insert(agentEvents)
-      .values({
-        planId,
-        taskId,
-        type: "completed",
-        data: { result },
-        sequenceNum: sequenceNum++,
-      })
-      .returning({
-        id: agentEvents.id,
-        planId: agentEvents.planId,
-        taskId: agentEvents.taskId,
-        data: agentEvents.data,
-        sequenceNum: agentEvents.sequenceNum,
-      });
-    emitAgentEvent({
-      id: completedEvent.id,
-      planId: completedEvent.planId,
-      taskId: completedEvent.taskId,
+    await persistAndEmitEvent({
+      planId,
+      taskId,
       type: "completed",
-      data: completedEvent.data,
-      sequenceNum: completedEvent.sequenceNum,
+      data: { result },
+      sequenceNum: sequenceNum++,
     });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -162,54 +153,19 @@ export async function runAgent(
     if (!failedRow) return;
 
     // Emit error + failed events
-    const [errorEvent] = await db
-      .insert(agentEvents)
-      .values({
-        planId,
-        taskId,
-        type: "error",
-        data: { error: errorMessage },
-        sequenceNum: sequenceNum++,
-      })
-      .returning({
-        id: agentEvents.id,
-        planId: agentEvents.planId,
-        taskId: agentEvents.taskId,
-        data: agentEvents.data,
-        sequenceNum: agentEvents.sequenceNum,
-      });
-    emitAgentEvent({
-      id: errorEvent.id,
-      planId: errorEvent.planId,
-      taskId: errorEvent.taskId,
+    await persistAndEmitEvent({
+      planId,
+      taskId,
       type: "error",
-      data: errorEvent.data,
-      sequenceNum: errorEvent.sequenceNum,
+      data: { error: errorMessage },
+      sequenceNum: sequenceNum++,
     });
-
-    const [failedEvent] = await db
-      .insert(agentEvents)
-      .values({
-        planId,
-        taskId,
-        type: "failed",
-        data: { error: errorMessage },
-        sequenceNum: sequenceNum++,
-      })
-      .returning({
-        id: agentEvents.id,
-        planId: agentEvents.planId,
-        taskId: agentEvents.taskId,
-        data: agentEvents.data,
-        sequenceNum: agentEvents.sequenceNum,
-      });
-    emitAgentEvent({
-      id: failedEvent.id,
-      planId: failedEvent.planId,
-      taskId: failedEvent.taskId,
+    await persistAndEmitEvent({
+      planId,
+      taskId,
       type: "failed",
-      data: failedEvent.data,
-      sequenceNum: failedEvent.sequenceNum,
+      data: { error: errorMessage },
+      sequenceNum: sequenceNum++,
     });
   } finally {
     if (stagehand) {

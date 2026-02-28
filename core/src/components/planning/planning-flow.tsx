@@ -16,12 +16,10 @@ function parseStep(value: string | null): PlanningStep {
 function buildPlanUrl(params: {
   step: PlanningStep;
   planId?: string | null;
-  sessionId?: string | null;
 }) {
   const search = new URLSearchParams();
   search.set("step", params.step);
   if (params.planId) search.set("planId", params.planId);
-  if (params.sessionId) search.set("sessionId", params.sessionId);
   return `/plan?${search.toString()}`;
 }
 
@@ -34,10 +32,9 @@ export function PlanningFlow() {
     [searchParams]
   );
   const planId = searchParams.get("planId");
-  const sessionId = searchParams.get("sessionId");
 
   const goToStep = (nextStep: PlanningStep) => {
-    router.push(buildPlanUrl({ step: nextStep, planId, sessionId }));
+    router.push(buildPlanUrl({ step: nextStep, planId }));
   };
 
   return (
@@ -50,18 +47,15 @@ export function PlanningFlow() {
       {step === "chat" && (
         <ChatInterface
           planId={planId ?? undefined}
-          sessionId={sessionId ?? undefined}
           onAccept={() => goToStep("review")}
         />
       )}
       {step === "review" && (
         <PlanReview
           planId={planId ?? undefined}
-          sessionId={sessionId ?? undefined}
           onBackToChat={() => goToStep("chat")}
         />
       )}
     </div>
   );
 }
-

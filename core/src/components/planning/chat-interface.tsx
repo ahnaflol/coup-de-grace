@@ -15,7 +15,6 @@ import type { ChatMessage as ChatMessageType, ParsedPlan } from "@/types";
 
 interface ChatInterfaceProps {
   planId?: string;
-  sessionId?: string;
   onAccept: () => void;
 }
 
@@ -203,4 +202,3 @@ export function ChatInterface({ planId, onAccept }: ChatInterfaceProps) {
     </div>
   );
 }
-

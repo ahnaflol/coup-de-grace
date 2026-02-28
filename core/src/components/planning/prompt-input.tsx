@@ -21,7 +21,6 @@ export function PromptInput() {
       const search = new URLSearchParams();
       search.set("step", "chat");
       search.set("planId", result.plan.id);
-      search.set("sessionId", result.sessionId);
       router.push(`/plan?${search.toString()}`);
     } catch (err) {
       const message =

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../index";
-import { plans } from "../../db/schema";
+import { plans, tasks } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { mistral } from "@ai-sdk/mistral";
 import { generateText, Output } from "ai";
@@ -19,13 +19,20 @@ export const planRouter = router({
   get: publicProcedure
     .input(z.object({ planId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const plan = await ctx.db.query.plans.findFirst({
-        where: eq(plans.id, input.planId),
-        with: { tasks: true },
-      });
+      const [plan] = await ctx.db
+        .select()
+        .from(plans)
+        .where(eq(plans.id, input.planId))
+        .limit(1);
       if (!plan) return null;
+
+      const taskRows = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.planId, plan.id));
+
       const parsed = planSchema.parse(JSON.parse(plan.content));
-      return { ...plan, parsed };
+      return { ...plan, tasks: taskRows, parsed };
     }),
 
   approve: publicProcedure
@@ -47,9 +54,11 @@ export const planRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const existing = await ctx.db.query.plans.findFirst({
-        where: eq(plans.id, input.planId),
-      });
+      const [existing] = await ctx.db
+        .select()
+        .from(plans)
+        .where(eq(plans.id, input.planId))
+        .limit(1);
       if (!existing) throw new Error("Plan not found");
 
       const { output: parsed } = await generateText({

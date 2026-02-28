@@ -1,10 +1,38 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../index";
 import { plans, tasks, agentEvents } from "../../db/schema";
-import { and, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { tracked } from "@trpc/server";
 import { orchestrate } from "../../agents/orchestrator";
 import { agentEventEmitter, type AgentEvent } from "../../agents/events";
+import type { AgentEventType, TaskStatus } from "../../../types";
+
+const AGENT_EVENT_TYPES = [
+  "step",
+  "session_ready",
+  "error",
+  "completed",
+  "failed",
+] as const satisfies readonly AgentEventType[];
+
+function toAgentEventType(value: string): AgentEventType {
+  return (AGENT_EVENT_TYPES as readonly string[]).includes(value)
+    ? (value as AgentEventType)
+    : "error";
+}
+
+const TASK_STATUSES = [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+] as const satisfies readonly TaskStatus[];
+
+function toTaskStatus(value: string): TaskStatus {
+  return (TASK_STATUSES as readonly string[]).includes(value)
+    ? (value as TaskStatus)
+    : "failed";
+}
 
 export const executionRouter = router({
   start: publicProcedure
@@ -17,10 +45,11 @@ export const executionRouter = router({
         .returning({ id: plans.id });
 
       if (!locked) {
-        const plan = await ctx.db.query.plans.findFirst({
-          where: eq(plans.id, input.planId),
-          columns: { id: true, status: true },
-        });
+        const [plan] = await ctx.db
+          .select({ id: plans.id, status: plans.status })
+          .from(plans)
+          .where(eq(plans.id, input.planId))
+          .limit(1);
         if (!plan) throw new Error("Plan not found");
         throw new Error(
           `Plan must be approved before execution (current status: ${plan.status})`
@@ -43,34 +72,59 @@ export const executionRouter = router({
     .subscription(async function* ({ ctx, input }) {
       // Replay missed events if reconnecting
       if (input.lastEventId) {
-        const lastEvent = await ctx.db.query.agentEvents.findFirst({
-          where: eq(agentEvents.id, input.lastEventId),
-        });
+        const [lastEvent] = await ctx.db
+          .select({
+            id: agentEvents.id,
+            taskId: agentEvents.taskId,
+            createdAt: agentEvents.createdAt,
+          })
+          .from(agentEvents)
+          .where(eq(agentEvents.id, input.lastEventId))
+          .limit(1);
 
-        if (lastEvent && lastEvent.planId === input.planId) {
-          const candidateEvents = await ctx.db.query.agentEvents.findMany({
-            where: and(
-              eq(agentEvents.planId, input.planId),
-              gt(agentEvents.createdAt, new Date(lastEvent.createdAt.getTime() - 1))
-            ),
-            orderBy: (agentEvents, { asc }) => [
-              asc(agentEvents.createdAt),
-              asc(agentEvents.id),
-            ],
-          });
+        if (lastEvent) {
+          const [lastEventTask] = await ctx.db
+            .select({ planId: tasks.planId })
+            .from(tasks)
+            .where(eq(tasks.id, lastEvent.taskId))
+            .limit(1);
 
-          let foundLast = false;
-          for (const event of candidateEvents) {
-            if (!foundLast) {
-              if (event.id === input.lastEventId) foundLast = true;
-              continue;
+          if (lastEventTask?.planId === input.planId) {
+            const candidateEvents = await ctx.db
+              .select({
+                id: agentEvents.id,
+                taskId: agentEvents.taskId,
+                type: agentEvents.type,
+                data: agentEvents.data,
+                sequenceNum: agentEvents.sequenceNum,
+                createdAt: agentEvents.createdAt,
+              })
+              .from(agentEvents)
+              .innerJoin(tasks, eq(agentEvents.taskId, tasks.id))
+              .where(
+                and(
+                  eq(tasks.planId, input.planId),
+                  gt(
+                    agentEvents.createdAt,
+                    new Date(lastEvent.createdAt.getTime() - 1)
+                  )
+                )
+              )
+              .orderBy(asc(agentEvents.createdAt), asc(agentEvents.id));
+
+            let foundLast = false;
+            for (const event of candidateEvents) {
+              if (!foundLast) {
+                if (event.id === input.lastEventId) foundLast = true;
+                continue;
+              }
+              yield tracked(event.id, {
+                taskId: event.taskId,
+                type: toAgentEventType(event.type),
+                data: event.data,
+                sequenceNum: event.sequenceNum,
+              });
             }
-            yield tracked(event.id, {
-              taskId: event.taskId,
-              type: event.type,
-              data: event.data,
-              sequenceNum: event.sequenceNum,
-            });
           }
         }
       }
@@ -113,8 +167,18 @@ export const executionRouter = router({
   getTaskStatuses: publicProcedure
     .input(z.object({ planId: z.string() }))
     .query(async ({ ctx, input }) => {
-      return ctx.db.query.tasks.findMany({
-        where: eq(tasks.planId, input.planId),
-      });
+      const rows = await ctx.db
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          instruction: tasks.instruction,
+          status: tasks.status,
+          liveViewUrl: tasks.liveViewUrl,
+          browserbaseSessionId: tasks.browserbaseSessionId,
+        })
+        .from(tasks)
+        .where(eq(tasks.planId, input.planId));
+
+      return rows.map((r) => ({ ...r, status: toTaskStatus(r.status) }));
     }),
 });

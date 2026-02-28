@@ -11,7 +11,6 @@ import { toast } from "sonner";
 
 interface PlanReviewProps {
   planId?: string;
-  sessionId?: string;
   onBackToChat: () => void;
 }
 
@@ -125,4 +124,3 @@ export function PlanReview({ planId, onBackToChat }: PlanReviewProps) {
     </div>
   );
 }
-
