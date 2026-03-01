@@ -27,6 +27,7 @@ export default function CompaniesPage() {
 function CompaniesPageContent() {
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const formRef = useRef<FormRef>(null);
 
   const {
@@ -47,7 +48,8 @@ function CompaniesPageContent() {
   } = useEntityList<Company>("companies");
 
   const { createEntity, isLoading: isCreating } =
-    useEntityMutation<Company>("companies");
+    // SH-SEED-002 (intentional): wrong entity type; POSTs to /api/company and creation fails.
+    useEntityMutation<Company>("company");
 
   const filterOptions = [
     {
@@ -77,9 +79,17 @@ function CompaniesPageContent() {
   }
 
   async function handleCreate(data: Partial<Company>) {
-    await createEntity(data);
-    setCreateOpen(false);
-    refresh();
+    setCreateError(null);
+    try {
+      await createEntity(data);
+      setCreateOpen(false);
+      refresh();
+    } catch (err) {
+      // SH-SEED-002: make the failure obvious in the UI.
+      setCreateError(
+        err instanceof Error ? err.message : "Failed to create company"
+      );
+    }
   }
 
   return (
@@ -116,11 +126,19 @@ function CompaniesPageContent() {
 
       <EntityFormModal
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setCreateError(null);
+        }}
         title="Create company"
         onSubmit={() => formRef.current?.submit()}
         isLoading={isCreating}
       >
+        {createError && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            {createError}
+          </div>
+        )}
         <CompanyForm
           ref={formRef}
           onSubmit={handleCreate}

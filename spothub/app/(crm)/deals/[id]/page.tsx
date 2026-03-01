@@ -33,7 +33,15 @@ export default function DealDetailPage({
   }
 
   function handlePropertyUpdate(field: string, value: string) {
-    updateEntity({ [field]: field === "amount" || field === "probability" ? Number(value) : value } as Partial<Deal>);
+    // SH-SEED-004 (intentional): amount is treated as cents and multiplied by 100.
+    updateEntity({
+      [field]:
+        field === "amount"
+          ? Number(value) * 100
+          : field === "probability"
+            ? Number(value)
+            : value,
+    } as Partial<Deal>);
   }
 
   const properties = [

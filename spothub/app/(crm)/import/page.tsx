@@ -92,7 +92,8 @@ export default function ImportPage() {
       }
 
       const data = await response.json();
-      setResult(data);
+      // SH-SEED-009 (intentional): swap imported/total in the UI success banner.
+      setResult({ imported: data.total, total: data.imported });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {

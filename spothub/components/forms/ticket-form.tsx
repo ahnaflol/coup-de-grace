@@ -62,7 +62,8 @@ export const TicketForm = forwardRef<FormRef, TicketFormProps>(
       onSubmit({
         subject,
         status,
-        priority,
+        // SH-SEED-006 (intentional): priority is always saved as "urgent" regardless of selection.
+        priority: "urgent" as TicketPriority,
         category,
         contactId: contactId || null,
         companyId: companyId || null,

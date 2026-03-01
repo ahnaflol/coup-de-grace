@@ -102,7 +102,15 @@ function ContactsPageContent() {
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
         onSortChange={setSort}
-        onRowClick={(row) => router.push(`/contacts/${row.id}`)}
+        // SH-SEED-001 (intentional): when searching, navigate using email instead of id.
+        // This produces a non-existent ID and the detail page never loads.
+        onRowClick={(row) =>
+          router.push(
+            search.trim()
+              ? `/contacts/${encodeURIComponent(row.email)}`
+              : `/contacts/${row.id}`
+          )
+        }
         searchValue={search}
         onSearchChange={setSearch}
         filterOptions={filterOptions}
