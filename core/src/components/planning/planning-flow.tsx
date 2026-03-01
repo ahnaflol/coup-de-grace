@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { AlertTriangle, RefreshCw, RotateCcw } from "lucide-react";
 import { PhaseStepper } from "@/components/layout/phase-stepper";
 import { THOUGHT_VARIANTS } from "@/lib/constants";
 import type { TaskMode } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
+import { isRecord } from "@/lib/utils";
+import { trpc } from "@/lib/trpc";
 import {
   findLatestPlannerToolFailure,
   findLatestPlannerToolPartByState,
@@ -43,6 +45,7 @@ interface PendingToolCall {
   toolCallId: string;
   toolName: string;
   input: unknown;
+  state: string;
   ready: boolean; // true when input is fully available (not still streaming)
 }
 
@@ -53,6 +56,7 @@ const PENDING_TOOL_STATES = new Set([
   "approval-requested",
   "approval-responded",
 ]);
+const STALLED_TOOL_TIMEOUT_MS = 10_000;
 
 function findPendingToolCall(
   messages: UIMessage[],
@@ -69,28 +73,13 @@ function findPendingToolCall(
     toolCallId: part.toolCallId,
     toolName: part.toolName,
     input: part.input,
+    state: part.state,
     ready: part.state === "input-available",
   };
 }
 
-function findFinalizedPlan(
-  messages: UIMessage[],
-): { planId: string } | null {
-  const part = findLatestPlannerToolPartByState(
-    messages,
-    "finalize_plan",
-    new Set(["output-available"]),
-  );
-  if (!part) return null;
-
-  const output = part.output as { planId?: string } | undefined;
-  if (output?.planId) return { planId: output.planId };
-  return null;
-}
-
 function derivePhase(messages: UIMessage[]): Phase {
   if (messages.length === 0) return "initial";
-  if (findFinalizedPlan(messages)) return "finalized";
   // Everything else (streaming, pending tools, idle) is "thinking"
   // — the overlays render on top of the thinking canvas
   return "thinking";
@@ -120,6 +109,40 @@ function collectThinkingText(messages: UIMessage[]): string {
     : fallbackTextChunks.join("\n\n");
 }
 
+function getLatestAssistantMessageText(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== "assistant") continue;
+    return msg.parts
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("\n\n")
+      .trim();
+  }
+
+  return "";
+}
+
+function getPlanMarkdownFromProposeInput(
+  input: ProposePlanInput | undefined,
+  latestAssistantText: string,
+): string {
+  const structuredPlan =
+    isRecord(input?.structuredPlan) ? input.structuredPlan : null;
+  const markdownFromStructured =
+    structuredPlan && typeof structuredPlan.planMarkdown === "string"
+      ? structuredPlan.planMarkdown
+      : undefined;
+
+  return (
+    (input?.planMarkdown ??
+      input?.plan ??
+      markdownFromStructured ??
+      latestAssistantText) ||
+    ""
+  ).trim();
+}
+
 function getStableThoughtCutoff(text: string): number {
   const paragraphBreak = text.lastIndexOf("\n\n");
   const sentenceBoundaryMatch = text.match(/[\s\S]*[.!?](?=\s|$)/);
@@ -145,7 +168,25 @@ export function PlanningFlow() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { messages, sendMessage, addToolOutput, status } = usePlannerChat();
+  const {
+    messages,
+    sendMessage,
+    addToolOutput,
+    regenerate,
+    resumeStream,
+    status,
+  } = usePlannerChat();
+  const finalizeAndLaunchMutation = trpc.plan.finalizeAndLaunch.useMutation();
+  const retryLaunchMutation = trpc.execution.start.useMutation();
+  const [stalledPendingTool, setStalledPendingTool] = useState<{
+    toolCallId: string;
+    toolName: string;
+    state: string;
+  } | null>(null);
+  const [launchFailure, setLaunchFailure] = useState<{
+    planId: string;
+    message: string;
+  } | null>(null);
 
   // Thought display state (staggered reveal)
   const [displayedThoughts, setDisplayedThoughts] = useState<ThoughtTrace[]>(
@@ -163,16 +204,29 @@ export function PlanningFlow() {
     "request_credentials",
   );
   const pendingPlan = findPendingToolCall(messages, "propose_plan");
-  const finalizedPlan = findFinalizedPlan(messages);
   const latestToolFailure = findLatestPlannerToolFailure(messages, [
     "ask_questions",
     "request_credentials",
     "propose_plan",
-    "finalize_plan",
   ]);
   const isStreamBusy = status === "streaming" || status === "submitted";
   const isWaitingForVisibleToolInput =
     pendingQuestions?.ready || pendingCredentials?.ready || pendingPlan?.ready;
+  const nonReadyPendingTool =
+    (pendingPlan && !pendingPlan.ready && pendingPlan) ||
+    (pendingCredentials && !pendingCredentials.ready && pendingCredentials) ||
+    (pendingQuestions && !pendingQuestions.ready && pendingQuestions) ||
+    null;
+  const nonReadyPendingToolCallId = nonReadyPendingTool?.toolCallId;
+  const nonReadyPendingToolName = nonReadyPendingTool?.toolName;
+  const nonReadyPendingToolState = nonReadyPendingTool?.state;
+  const latestAssistantText = getLatestAssistantMessageText(messages);
+  const pendingPlanInput = pendingPlan?.input as ProposePlanInput | undefined;
+  const pendingPlanMarkdown = getPlanMarkdownFromProposeInput(
+    pendingPlanInput,
+    latestAssistantText,
+  );
+  const canShowPlanProposal = Boolean(pendingPlan && pendingPlanMarkdown.length > 0);
   const blockingToolError =
     !isStreamBusy && !isWaitingForVisibleToolInput ? latestToolFailure : null;
 
@@ -187,6 +241,7 @@ export function PlanningFlow() {
   const pendingThoughtsRef = useRef<string[]>([]);
   const isStreamingRef = useRef(false);
   const debugLogKeyRef = useRef("");
+  const seededThinkingRef = useRef(false);
 
   // Stable drain function — uses only refs and the stable state setter.
   // Named function expression for self-reference in the setTimeout chain.
@@ -262,6 +317,22 @@ export function PlanningFlow() {
     }
   }, [messages, status, drainQueue]);
 
+  useEffect(() => {
+    if (!isStreamBusy) {
+      seededThinkingRef.current = false;
+      return;
+    }
+
+    if (seededThinkingRef.current) return;
+    if (displayedThoughts.length > 0) return;
+    if (pendingThoughtsRef.current.length > 0) return;
+
+    seededThinkingRef.current = true;
+    queueSyntheticThought(
+      "Analyzing your request and preparing the next planning step.",
+    );
+  }, [isStreamBusy, displayedThoughts.length, queueSyntheticThought]);
+
   // Cleanup drain timer on unmount only
   useEffect(() => {
     return () => {
@@ -276,7 +347,6 @@ export function PlanningFlow() {
     if (process.env.NODE_ENV === "production") return;
     if (status === "ready") return;
     if (messages.length === 0) return;
-    if (finalizedPlan) return;
     if (isWaitingForVisibleToolInput) return;
 
     const toolParts = getLastAssistantPlannerToolPartsDebug(messages);
@@ -292,8 +362,44 @@ export function PlanningFlow() {
   }, [
     messages,
     status,
-    finalizedPlan,
     isWaitingForVisibleToolInput,
+  ]);
+
+  useEffect(() => {
+    if (
+      isStreamBusy ||
+      blockingToolError ||
+      !nonReadyPendingToolCallId ||
+      !nonReadyPendingToolName ||
+      !nonReadyPendingToolState
+    ) {
+      setStalledPendingTool(null);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setStalledPendingTool({
+        toolCallId: nonReadyPendingToolCallId,
+        toolName: nonReadyPendingToolName,
+        state: nonReadyPendingToolState,
+      });
+
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[planner] Detected stalled pending tool call", {
+          toolCallId: nonReadyPendingToolCallId,
+          toolName: nonReadyPendingToolName,
+          state: nonReadyPendingToolState,
+        });
+      }
+    }, STALLED_TOOL_TIMEOUT_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    isStreamBusy,
+    blockingToolError,
+    nonReadyPendingToolCallId,
+    nonReadyPendingToolName,
+    nonReadyPendingToolState,
   ]);
 
   // Handlers
@@ -334,17 +440,114 @@ export function PlanningFlow() {
     [addToolOutput, pendingCredentials, queueSyntheticThought],
   );
 
-  const handlePlanApprove = useCallback(() => {
+  const handlePlanApprove = useCallback(async () => {
     if (!pendingPlan) return;
+    setLaunchFailure(null);
     queueSyntheticThought(
-      "Converting the approved strategy into the final executable plan.",
+      "Finalizing your plan and launching agents.",
     );
-    addToolOutput({
-      tool: "propose_plan",
-      toolCallId: pendingPlan.toolCallId,
-      output: { approved: true },
-    });
-  }, [addToolOutput, pendingPlan, queueSyntheticThought]);
+
+    try {
+      const input = pendingPlan.input as ProposePlanInput | undefined;
+      const planMarkdown = getPlanMarkdownFromProposeInput(
+        input,
+        getLatestAssistantMessageText(messages),
+      );
+      const rawStructured = input?.structuredPlan;
+      const assistantTextFallback = latestAssistantText;
+
+      if (!planMarkdown && !rawStructured && !assistantTextFallback) {
+        throw new Error(
+          "Planner did not provide plan data for review.",
+        );
+      }
+
+      // Extract user prompt and mode from first user message
+      const firstUserMessage = messages.find((m) => m.role === "user");
+      const firstUserText = firstUserMessage
+        ? firstUserMessage.parts
+            .filter(
+              (p): p is { type: "text"; text: string } => p.type === "text",
+            )
+            .map((p) => p.text)
+            .join("\n")
+        : "";
+
+      const modeMatch = firstUserText.match(/\[Mode:\s*(.+?)\]/);
+      const parsedMode = modeMatch?.[1];
+      const mode: "testing" | "data-migration" | "data-entry" =
+        parsedMode === "testing" ||
+        parsedMode === "data-migration" ||
+        parsedMode === "data-entry"
+          ? parsedMode
+          : "testing";
+
+      // Remove the [Mode: ...] prefix from the user prompt
+      const userPrompt = firstUserText.replace(/\[Mode:\s*.+?\]\s*/, "").trim();
+
+      const result = await finalizeAndLaunchMutation.mutateAsync({
+        planMarkdown: planMarkdown || undefined,
+        structuredPlan: rawStructured,
+        assistantTextFallback: assistantTextFallback || undefined,
+        userPrompt,
+        mode,
+      });
+
+      if (result.started) {
+        router.push(`/execute?planId=${encodeURIComponent(result.planId)}`);
+        return;
+      }
+
+      setLaunchFailure({
+        planId: result.planId,
+        message:
+          result.error ??
+          "Plan saved, but launching agents failed. Retry launch to continue.",
+      });
+      queueSyntheticThought(
+        "Plan saved, but launch failed. Use retry launch to continue.",
+      );
+    } catch (err) {
+      console.error("[planner] Failed to finalize and launch plan:", err);
+      queueSyntheticThought(
+        "Something went wrong while launching. Please retry.",
+      );
+    }
+  }, [
+    pendingPlan,
+    messages,
+    latestAssistantText,
+    finalizeAndLaunchMutation,
+    router,
+    queueSyntheticThought,
+  ]);
+
+  const handleRetryLaunch = useCallback(async () => {
+    if (!launchFailure) return;
+
+    queueSyntheticThought("Retrying execution launch for the saved plan.");
+
+    try {
+      const result = await retryLaunchMutation.mutateAsync({
+        planId: launchFailure.planId,
+      });
+      if (result.started) {
+        setLaunchFailure(null);
+        router.push(`/execute?planId=${encodeURIComponent(launchFailure.planId)}`);
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Retry failed. Please try again.";
+      setLaunchFailure((current) =>
+        current ? { ...current, message } : current,
+      );
+      queueSyntheticThought(
+        "Launch retry failed. You can retry again or start over.",
+      );
+    }
+  }, [launchFailure, retryLaunchMutation, queueSyntheticThought, router]);
 
   const handlePlanChanges = useCallback(
     (feedback: string) => {
@@ -365,6 +568,35 @@ export function PlanningFlow() {
     window.location.reload();
   }, []);
 
+  const handleRetryPlannerTurn = useCallback(() => {
+    if (stalledPendingTool?.toolName === "propose_plan") {
+      queueSyntheticThought(
+        "Retrying final proposal with compact tool input so the plan can be reviewed.",
+      );
+      sendMessage({
+        text:
+          "Retry the final proposal now. Write the full plan markdown in assistant text, then call propose_plan with summary, taskCount, and structuredPlan (including planMarkdown).",
+      });
+      return;
+    }
+
+    queueSyntheticThought(
+      "Retrying the planning step to continue toward the final plan proposal.",
+    );
+    void (async () => {
+      await resumeStream();
+      setTimeout(() => {
+        void regenerate();
+      }, 900);
+    })();
+  }, [
+    stalledPendingTool?.toolName,
+    queueSyntheticThought,
+    sendMessage,
+    regenerate,
+    resumeStream,
+  ]);
+
   // Direct URL navigation to review
   if (urlStep === "review" && urlPlanId) {
     return (
@@ -380,28 +612,6 @@ export function PlanningFlow() {
         >
           <PlanReview
             planId={urlPlanId}
-            onBackToChat={() => router.push("/plan")}
-          />
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Finalized plan -> review
-  if (finalizedPlan) {
-    return (
-      <div className="flex flex-1 flex-col">
-        <div className="flex justify-center px-4 py-6">
-          <PhaseStepper currentStep="review" />
-        </div>
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-          className="flex flex-1 flex-col py-6"
-        >
-          <PlanReview
-            planId={finalizedPlan.planId}
             onBackToChat={() => router.push("/plan")}
           />
         </motion.div>
@@ -457,6 +667,24 @@ export function PlanningFlow() {
               />
             )}
 
+            {launchFailure && (
+              <LaunchFailureOverlay
+                message={launchFailure.message}
+                isRetrying={retryLaunchMutation.isPending}
+                onRetry={handleRetryLaunch}
+                onStartOver={handleRecoverFromToolError}
+              />
+            )}
+
+            {stalledPendingTool && !canShowPlanProposal && (
+              <StalledToolOverlay
+                toolName={stalledPendingTool.toolName}
+                toolState={stalledPendingTool.state}
+                onRetry={handleRetryPlannerTurn}
+                onStartOver={handleRecoverFromToolError}
+              />
+            )}
+
             {pendingQuestions?.ready && (
               <QuestionOverlay
                 questions={
@@ -478,11 +706,9 @@ export function PlanningFlow() {
               />
             )}
 
-            {pendingPlan?.ready && (
+            {canShowPlanProposal && !launchFailure && (
               <PlanProposalOverlay
-                planMarkdown={
-                  (pendingPlan.input as ProposePlanInput).plan
-                }
+                planMarkdown={pendingPlanMarkdown}
                 onApprove={handlePlanApprove}
                 onRequestChanges={handlePlanChanges}
               />
@@ -521,6 +747,93 @@ function ToolErrorOverlay({
           </p>
         )}
         <div className="mt-4 flex justify-end">
+          <Button onClick={onStartOver} className="gap-2">
+            <RotateCcw className="h-3.5 w-3.5" />
+            Start Over
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LaunchFailureOverlay({
+  message,
+  isRetrying,
+  onRetry,
+  onStartOver,
+}: {
+  message: string;
+  isRetrying: boolean;
+  onRetry: () => void;
+  onStartOver: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
+      <div className="relative z-10 mx-6 w-full max-w-xl rounded-xl border border-amber-500/30 bg-card/95 p-6 shadow-lg">
+        <div className="mb-3 flex items-center gap-2 text-amber-300">
+          <AlertTriangle className="h-4 w-4" />
+          <p className="text-sm font-medium">Execution launch failed</p>
+        </div>
+        <p className="text-sm text-foreground/90">
+          The plan was saved, but execution did not start.
+        </p>
+        <p className="mt-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 font-mono text-xs text-amber-100/90">
+          {message}
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={onRetry}
+            disabled={isRetrying}
+            className="gap-2"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {isRetrying ? "Retrying..." : "Retry Launch"}
+          </Button>
+          <Button onClick={onStartOver} className="gap-2">
+            <RotateCcw className="h-3.5 w-3.5" />
+            Start Over
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StalledToolOverlay({
+  toolName,
+  toolState,
+  onRetry,
+  onStartOver,
+}: {
+  toolName: string;
+  toolState: string;
+  onRetry: () => void;
+  onStartOver: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
+      <div className="relative z-10 mx-6 w-full max-w-xl rounded-xl border border-amber-500/30 bg-card/95 p-6 shadow-lg">
+        <div className="mb-3 flex items-center gap-2 text-amber-300">
+          <AlertTriangle className="h-4 w-4" />
+          <p className="text-sm font-medium">Planner appears stalled</p>
+        </div>
+        <p className="text-sm text-foreground/90">
+          The planner is waiting on <code>{toolName}</code> but the tool input
+          never became usable. This usually happens when a tool payload was left
+          incomplete.
+        </p>
+        <p className="mt-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 font-mono text-xs text-amber-100/90">
+          Current state: {toolState}
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onRetry} className="gap-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry Planner Turn
+          </Button>
           <Button onClick={onStartOver} className="gap-2">
             <RotateCcw className="h-3.5 w-3.5" />
             Start Over
