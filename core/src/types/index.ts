@@ -14,7 +14,8 @@ export type AgentEventType =
   | "session_ready"
   | "error"
   | "completed"
-  | "failed";
+  | "failed"
+  | "row_extracted";
 
 export interface TaskEvent {
   id: string;

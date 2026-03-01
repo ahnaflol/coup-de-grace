@@ -1,10 +1,11 @@
 import { EventEmitter } from "events";
+import type { AgentEventType } from "@/types";
 
 export interface AgentEvent {
   id: string;
   planId: string;
   taskId: string;
-  type: "step" | "session_ready" | "error" | "completed" | "failed";
+  type: AgentEventType;
   data: unknown;
   sequenceNum: number;
 }

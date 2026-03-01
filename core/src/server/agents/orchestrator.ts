@@ -2,7 +2,9 @@ import { db } from "../db";
 import { plans, tasks } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { runAgent } from "./runner";
+import { runExtractionAgent } from "./extraction-runner";
 import { stopAllRunningTasks } from "./stop";
+import { compileExtractionResults } from "./compiler";
 import { Plan } from "@/server/schemas";
 
 export async function orchestrate(planId: string) {
@@ -20,6 +22,7 @@ export async function orchestrate(planId: string) {
     if (!plan) throw new Error("Plan not found");
 
     const content: Plan = JSON.parse(plan.content);
+    const mode = plan.mode;
 
     const tasksToRun = content.tasks;
 
@@ -43,9 +46,13 @@ export async function orchestrate(planId: string) {
       if (!task.startUrl) throw new Error(`Task ${task.id} missing startUrl`);
     }
 
+    // Choose runner based on plan mode
+    const runTask =
+      mode === "data-migration" ? runExtractionAgent : runAgent;
+
     await Promise.all(
       taskRecords.map((task) =>
-        runAgent({
+        runTask({
           planId,
           taskId: task.id,
           instruction: task.instruction,
@@ -63,6 +70,11 @@ export async function orchestrate(planId: string) {
       updatedTasks.length > 0 &&
       updatedTasks.every((t) => t.status === "completed");
     const anyFailed = updatedTasks.some((t) => t.status === "failed");
+
+    // For data-migration mode, run consistency check after all tasks complete
+    if (mode === "data-migration" && allCompleted) {
+      await compileExtractionResults(planId, content.expectedColumns);
+    }
 
     const finalStatus = allCompleted && !anyFailed ? "completed" : "failed";
 

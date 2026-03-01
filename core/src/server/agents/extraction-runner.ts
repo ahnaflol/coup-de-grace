@@ -1,11 +1,11 @@
 import { BrowserUse } from "browser-use-sdk";
 import { db } from "../db";
-import { tasks } from "../db/schema";
+import { tasks, extractedRows } from "../db/schema";
 import { and, eq } from "drizzle-orm";
 import { persistAndEmitEvent } from "./persist-event";
-import { agentResultSchema } from "@/server/schemas";
+import { extractionResultSchema } from "@/server/schemas";
 
-export async function runAgent(input: {
+export async function runExtractionAgent(input: {
   planId: string;
   taskId: string;
   instruction: string;
@@ -16,8 +16,8 @@ export async function runAgent(input: {
   let client: BrowserUse | null = null;
   let sessionId: string | null = null;
 
-  console.log(`[runner] Starting agent | planId=${planId} taskId=${taskId}`);
-  console.log(`[runner] Instruction: ${instruction}`);
+  console.log(`[extraction-runner] Starting agent | planId=${planId} taskId=${taskId}`);
+  console.log(`[extraction-runner] Instruction: ${instruction}`);
 
   try {
     if (!process.env.BROWSER_USE_API_KEY) {
@@ -31,7 +31,7 @@ export async function runAgent(input: {
       .update(tasks)
       .set({ status: "running", startedAt: new Date() })
       .where(eq(tasks.id, taskId));
-    console.log(`[runner] Task marked as running | taskId=${taskId}`);
+    console.log(`[extraction-runner] Task marked as running | taskId=${taskId}`);
 
     client = new BrowserUse();
 
@@ -42,13 +42,13 @@ export async function runAgent(input: {
       allowedDomains = undefined;
     }
 
-    console.log(`[runner] Creating BrowserUse session`);
+    console.log(`[extraction-runner] Creating BrowserUse session`);
     const session = await client.sessions.create({ startUrl });
     sessionId = session.id;
-    console.log(`[runner] BrowserUse session ID: ${sessionId}`);
+    console.log(`[extraction-runner] BrowserUse session ID: ${sessionId}`);
 
     const liveUrl = session.liveUrl ?? null;
-    console.log(`[runner] Live URL: ${liveUrl ?? "(none)"}`);
+    console.log(`[extraction-runner] Live URL: ${liveUrl ?? "(none)"}`);
 
     const share = await client.sessions
       .createShare(sessionId)
@@ -76,10 +76,10 @@ export async function runAgent(input: {
       sequenceNum: sequenceNum++,
     });
 
-    console.log(`[runner] Executing BrowserUse task | maxSteps=25`);
+    console.log(`[extraction-runner] Executing BrowserUse task | maxSteps=25`);
     const run = client.run(instruction, {
       sessionId,
-      schema: agentResultSchema,
+      schema: extractionResultSchema,
       maxSteps: 25,
       startUrl,
       allowedDomains,
@@ -87,8 +87,8 @@ export async function runAgent(input: {
     });
 
     for await (const step of run) {
-      console.log(`[runner] Step ${step.number}: ${step.nextGoal}`);
-      console.log(`[runner]   URL: ${step.url}`);
+      console.log(`[extraction-runner] Step ${step.number}: ${step.nextGoal}`);
+      console.log(`[extraction-runner]   URL: ${step.url}`);
       await persistAndEmitEvent({
         planId,
         taskId,
@@ -107,10 +107,41 @@ export async function runAgent(input: {
     }
 
     const result = run.result ?? (await run);
-    console.log(`[runner] Task execution complete | taskId=${taskId}`, {
+    console.log(`[extraction-runner] Task execution complete | taskId=${taskId}`, {
       taskId: result.id,
       status: result.status,
     });
+
+    // Persist extracted rows and emit row_extracted events
+    const output = result.output as {
+      extractedRows?: Record<string, string>[];
+      recordsFound?: number;
+      recordsExtracted?: number;
+    } | null;
+
+    if (output?.extractedRows) {
+      for (let i = 0; i < output.extractedRows.length; i++) {
+        const rowData = output.extractedRows[i];
+
+        await db.insert(extractedRows).values({
+          planId,
+          taskId,
+          rowIndex: i,
+          data: rowData,
+        });
+
+        await persistAndEmitEvent({
+          planId,
+          taskId,
+          type: "row_extracted",
+          data: { rowIndex: i, data: rowData, taskId },
+          sequenceNum: sequenceNum++,
+        });
+      }
+      console.log(
+        `[extraction-runner] Persisted ${output.extractedRows.length} extracted rows | taskId=${taskId}`,
+      );
+    }
 
     // Mark task completed
     const [completedRow] = await db
@@ -124,7 +155,7 @@ export async function runAgent(input: {
       .returning({ id: tasks.id });
 
     if (!completedRow) return;
-    console.log(`[runner] Task marked as completed | taskId=${taskId}`);
+    console.log(`[extraction-runner] Task marked as completed | taskId=${taskId}`);
 
     // Emit completed event
     await persistAndEmitEvent({
@@ -138,7 +169,7 @@ export async function runAgent(input: {
     const errorMessage =
       err instanceof Error ? err.message : String(JSON.stringify(err, null, 2));
     console.error(
-      `[runner] Agent failed | taskId=${taskId} error=${errorMessage}`,
+      `[extraction-runner] Agent failed | taskId=${taskId} error=${errorMessage}`,
     );
 
     // Mark task failed
@@ -171,7 +202,7 @@ export async function runAgent(input: {
     });
   } finally {
     if (client && sessionId) {
-      console.log(`[runner] Stopping BrowserUse session | taskId=${taskId}`);
+      console.log(`[extraction-runner] Stopping BrowserUse session | taskId=${taskId}`);
       await client.sessions.stop(sessionId).catch(() => {});
     }
   }

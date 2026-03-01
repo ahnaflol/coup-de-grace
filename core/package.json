@@ -14,6 +14,7 @@
     "coupdegrace": "tsx --env-file=.env src/cli/index.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.50",
     "@ai-sdk/mistral": "^2.0.25",
     "@ai-sdk/openai": "^3.0.37",
     "@ai-sdk/react": "^3.0.107",

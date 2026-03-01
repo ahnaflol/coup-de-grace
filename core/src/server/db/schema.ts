@@ -13,6 +13,7 @@ export const plans = pgTable("plans", {
   userPrompt: text().notNull(),
   content: text().notNull(), // JSON string of plan
   status: text().default("draft").notNull(),
+  mode: text().default("testing").notNull(),
   createdAt: timestamp().defaultNow().notNull(),
   updatedAt: timestamp().defaultNow().notNull(),
 });
@@ -32,6 +33,19 @@ export const tasks = pgTable("tasks", {
   shareUrl: text(),
   startedAt: timestamp(),
   completedAt: timestamp(),
+  createdAt: timestamp().defaultNow().notNull(),
+});
+
+export const extractedRows = pgTable("extracted_rows", {
+  id: uuid().primaryKey().defaultRandom(),
+  planId: uuid()
+    .notNull()
+    .references(() => plans.id, { onDelete: "cascade" }),
+  taskId: uuid()
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  rowIndex: integer().notNull(),
+  data: jsonb().notNull(),
   createdAt: timestamp().defaultNow().notNull(),
 });
 
