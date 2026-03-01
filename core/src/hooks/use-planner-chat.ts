@@ -29,17 +29,16 @@ export type CredentialsResult = {
 };
 
 export type ProposePlanInput = {
-  plan: string;
+  plan?: string;
+  planMarkdown?: string;
+  summary?: string;
+  taskCount?: number;
+  structuredPlan?: unknown;
 };
 
 export type ProposePlanResult = {
   approved: boolean;
   feedback?: string;
-};
-
-export type FinalizePlanResult = {
-  planId: string;
-  success: boolean;
 };
 
 const transport = new DefaultChatTransport({
