@@ -28,7 +28,6 @@ import { QuestionOverlay } from "./question-overlay";
 import { CredentialsOverlay } from "./credentials-overlay";
 import { PlanProposalOverlay } from "./plan-proposal-overlay";
 import { PlanReview } from "./plan-review";
-import { trpc } from "@/lib/trpc";
 
 type Phase = "initial" | "thinking" | "finalized";
 
@@ -101,17 +100,41 @@ function derivePhase(messages: UIMessage[]): Phase {
 // Reasoning -> ThoughtTrace conversion with staggered display
 // ---------------------------------------------------------------------------
 
-function collectReasoningText(messages: UIMessage[]): string {
-  const chunks: string[] = [];
+function collectThinkingText(messages: UIMessage[]): string {
+  const reasoningChunks: string[] = [];
+  const fallbackTextChunks: string[] = [];
+
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
     for (const part of msg.parts) {
       if (part.type === "reasoning") {
-        chunks.push(part.text);
+        reasoningChunks.push(part.text);
+      } else if (part.type === "text") {
+        fallbackTextChunks.push(part.text);
       }
     }
   }
-  return chunks.join("");
+
+  return reasoningChunks.length > 0
+    ? reasoningChunks.join("")
+    : fallbackTextChunks.join("\n\n");
+}
+
+function getStableThoughtCutoff(text: string): number {
+  const paragraphBreak = text.lastIndexOf("\n\n");
+  const sentenceBoundaryMatch = text.match(/[\s\S]*[.!?](?=\s|$)/);
+  const sentenceBreak = sentenceBoundaryMatch
+    ? sentenceBoundaryMatch[0].length
+    : -1;
+
+  return Math.max(paragraphBreak === -1 ? -1 : paragraphBreak + 2, sentenceBreak);
+}
+
+function extractThoughts(text: string): string[] {
+  return text
+    .split(/\n\n+|(?<=[.!?])\s+/)
+    .map((p) => p.trim().replace(/\s+/g, " "))
+    .filter((p) => p.length > 20);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +144,6 @@ function collectReasoningText(messages: UIMessage[]): string {
 export function PlanningFlow() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const utils = trpc.useUtils();
 
   const { messages, sendMessage, addToolOutput, status } = usePlannerChat();
 
@@ -199,11 +221,21 @@ export function PlanningFlow() {
     }, delay);
   }, []);
 
+  const queueSyntheticThought = useCallback(
+    (text: string) => {
+      pendingThoughtsRef.current.push(text);
+      if (!timerRef.current) {
+        drainQueue();
+      }
+    },
+    [drainQueue],
+  );
+
   // Collect completed paragraphs from reasoning text into the pending queue.
   // NOTE: No cleanup — the drain timer runs independently and must NOT be
   // killed on every re-render (messages updates per-token during streaming).
   useEffect(() => {
-    const allText = collectReasoningText(messages);
+    const allText = collectThinkingText(messages);
     const isStreaming = status === "streaming" || status === "submitted";
     isStreamingRef.current = isStreaming;
 
@@ -211,29 +243,17 @@ export function PlanningFlow() {
     if (!newText) return;
 
     if (isStreaming) {
-      // While streaming, only take completed paragraphs (before the last \n\n).
-      const lastBreak = newText.lastIndexOf("\n\n");
-      if (lastBreak === -1) return;
+      // While streaming, emit complete paragraphs or sentence-level chunks.
+      const cutoff = getStableThoughtCutoff(newText);
+      if (cutoff <= 0) return;
 
-      const stable = newText.slice(0, lastBreak);
-      consumedLenRef.current += lastBreak + 2;
-
-      const paras = stable
-        .split(/\n\n+/)
-        .map((p) => p.trim().replace(/\s+/g, " "))
-        .filter((p) => p.length > 10);
-
-      pendingThoughtsRef.current.push(...paras);
+      const stable = newText.slice(0, cutoff);
+      consumedLenRef.current += cutoff;
+      pendingThoughtsRef.current.push(...extractThoughts(stable));
     } else {
       // Stream finished — flush everything remaining
       consumedLenRef.current = allText.length;
-
-      const paras = newText
-        .split(/\n\n+/)
-        .map((p) => p.trim().replace(/\s+/g, " "))
-        .filter((p) => p.length > 10);
-
-      pendingThoughtsRef.current.push(...paras);
+      pendingThoughtsRef.current.push(...extractThoughts(newText));
     }
 
     // Kick off drain loop if not already running
@@ -287,46 +307,58 @@ export function PlanningFlow() {
   const handleQuestionAnswers = useCallback(
     (answers: Record<string, string | string[]>) => {
       if (!pendingQuestions) return;
+      queueSyntheticThought(
+        "Reviewing your answers and deciding the most relevant follow-up questions.",
+      );
       addToolOutput({
         tool: "ask_questions",
         toolCallId: pendingQuestions.toolCallId,
         output: answers,
       });
     },
-    [addToolOutput, pendingQuestions],
+    [addToolOutput, pendingQuestions, queueSyntheticThought],
   );
 
   const handleCredentials = useCallback(
     (result: CredentialsResult) => {
       if (!pendingCredentials) return;
+      queueSyntheticThought(
+        "Analyzing access details and preparing the next planning step.",
+      );
       addToolOutput({
         tool: "request_credentials",
         toolCallId: pendingCredentials.toolCallId,
         output: result,
       });
     },
-    [addToolOutput, pendingCredentials],
+    [addToolOutput, pendingCredentials, queueSyntheticThought],
   );
 
   const handlePlanApprove = useCallback(() => {
     if (!pendingPlan) return;
+    queueSyntheticThought(
+      "Converting the approved strategy into the final executable plan.",
+    );
     addToolOutput({
       tool: "propose_plan",
       toolCallId: pendingPlan.toolCallId,
       output: { approved: true },
     });
-  }, [addToolOutput, pendingPlan]);
+  }, [addToolOutput, pendingPlan, queueSyntheticThought]);
 
   const handlePlanChanges = useCallback(
     (feedback: string) => {
       if (!pendingPlan) return;
+      queueSyntheticThought(
+        "Incorporating your feedback and refining task-level instructions.",
+      );
       addToolOutput({
         tool: "propose_plan",
         toolCallId: pendingPlan.toolCallId,
         output: { approved: false, feedback },
       });
     },
-    [addToolOutput, pendingPlan],
+    [addToolOutput, pendingPlan, queueSyntheticThought],
   );
 
   const handleRecoverFromToolError = useCallback(() => {

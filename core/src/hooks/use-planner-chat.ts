@@ -1,7 +1,10 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithToolCalls,
+} from "ai";
 
 export type AskQuestionsInput = {
   questions: Array<{
@@ -44,5 +47,8 @@ const transport = new DefaultChatTransport({
 });
 
 export function usePlannerChat() {
-  return useChat({ transport });
+  return useChat({
+    transport,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+  });
 }
