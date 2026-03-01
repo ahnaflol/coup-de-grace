@@ -29,8 +29,6 @@ const EMPTY_TASKS: Array<{
   result: unknown;
 }> = [];
 
-=======
->>>>>>> main
 export function ExecutionDashboard({ planId }: { planId: string }) {
   const storageKey = `coup:lastEventId:${planId}`;
   const [subscriptionLastEventId] = useState<string | null>(() => {
