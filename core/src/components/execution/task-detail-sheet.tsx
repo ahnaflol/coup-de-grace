@@ -12,10 +12,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { ChevronLeft, ChevronRight, LayoutList, ScrollText, BarChart3, Database } from "lucide-react";
-import { DataTable } from "./data-table";
-import type { AgentEventType } from "@/types";
-import type { TaskMode } from "@/lib/constants";
+import {
+  ChevronLeft,
+  ChevronRight,
+  LayoutList,
+  ScrollText,
+  BarChart3,
+} from "lucide-react";
+import type { AgentEventType, TaskStatus } from "@/types";
 import type { TaskEventWithTime } from "./execution-dashboard";
 import { isRecord, toStringRecord } from "@/lib/utils";
 
@@ -48,7 +52,7 @@ function formatTime(date: Date): string {
 
 function summarize(
   type: AgentEventType,
-  data: unknown
+  data: unknown,
 ): { action: string; detail: string } {
   if (type === "session_ready" && data && typeof data === "object") {
     const liveUrl =
@@ -58,11 +62,14 @@ function summarize(
     }
     return { action: "session_ready", detail: "Session initialized." };
   }
-  if (type === "completed") return { action: "completed", detail: "Task completed." };
+  if (type === "completed")
+    return { action: "completed", detail: "Task completed." };
   if (type === "failed") return { action: "failed", detail: "Task failed." };
   if (type === "error") {
     const message =
-      isRecord(data) && typeof data.error === "string" ? data.error : "Unknown error";
+      isRecord(data) && typeof data.error === "string"
+        ? data.error
+        : "Unknown error";
     return { action: "error", detail: message };
   }
   const detail =
@@ -103,7 +110,9 @@ function ResultsPanel({ result }: { result: unknown }) {
     <div className="space-y-5 p-4">
       {isSuccess !== null && (
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-zinc-400">Browser session</span>
+          <span className="text-sm font-medium text-zinc-400">
+            Browser session
+          </span>
           <Badge variant={isSuccess ? "default" : "destructive"}>
             {isSuccess ? "Completed" : "Error"}
           </Badge>
@@ -113,7 +122,9 @@ function ResultsPanel({ result }: { result: unknown }) {
       {outcome && (
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-zinc-400">Agent task verdict</span>
+            <span className="text-sm font-medium text-zinc-400">
+              Agent task verdict
+            </span>
             <Badge
               variant={outcome === "pass" ? "default" : "destructive"}
               className="capitalize"
@@ -162,7 +173,9 @@ function ResultsPanel({ result }: { result: unknown }) {
             {cost !== null && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-zinc-400">Cost</span>
-                <span className="font-mono text-zinc-200">${cost.toFixed(4)}</span>
+                <span className="font-mono text-zinc-200">
+                  ${cost.toFixed(4)}
+                </span>
               </div>
             )}
             {judgeVerdict && (
@@ -192,7 +205,10 @@ function LogsPanel({ events }: { events: TaskEventWithTime[] }) {
       {events.map((e) => {
         const { action, detail } = summarize(e.type, e.data);
         return (
-          <div key={e.id} className="flex gap-3 rounded-lg border border-zinc-800 p-3">
+          <div
+            key={e.id}
+            className="flex gap-3 rounded-lg border border-zinc-800 p-3"
+          >
             <div className="shrink-0 text-[10px] font-mono text-zinc-500 pt-0.5">
               {formatTime(e.receivedAt)}
             </div>
@@ -201,7 +217,9 @@ function LogsPanel({ events }: { events: TaskEventWithTime[] }) {
                 {action}{" "}
                 <span className="text-xs text-zinc-500">#{e.sequenceNum}</span>
               </p>
-              <p className="text-xs text-zinc-400 whitespace-pre-wrap">{detail}</p>
+              <p className="text-xs text-zinc-400 whitespace-pre-wrap">
+                {detail}
+              </p>
             </div>
           </div>
         );
@@ -220,7 +238,11 @@ function StepsPanel({ steps }: { steps: StepData[] }) {
   const scrollThumbIntoView = useCallback((index: number) => {
     const el = thumbRefs.current.get(index);
     if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      el.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
     }
   }, []);
 
@@ -350,10 +372,7 @@ function StepsPanel({ steps }: { steps: StepData[] }) {
       {/* Timeline strip — bottom */}
       {steps.length > 1 && (
         <div className="border-t border-zinc-800 bg-zinc-900/50 rounded-b-lg">
-          <div
-            ref={stripRef}
-            className="overflow-x-auto flex gap-3 py-3 px-3"
-          >
+          <div ref={stripRef} className="overflow-x-auto flex gap-3 py-3 px-3">
             {steps.map((s, i) => (
               <button
                 key={s.number}
@@ -473,13 +492,17 @@ export function TaskDetailSheet({
   taskTitle,
   result,
   events,
-  mode = "testing",
+  status,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   taskTitle: string;
   result: unknown;
   events: TaskEventWithTime[];
-  mode?: TaskMode;
+  status: TaskStatus;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const steps = extractSteps(events);
   const isDataMigration = mode === "data-migration";
@@ -487,11 +510,13 @@ export function TaskDetailSheet({
   const [tab, setTab] = useState<TabKey>(defaultTab);
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+    <Dialog open={controlledOpen} onOpenChange={controlledOnOpenChange}>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent className="sm:max-w-6xl max-h-[85vh] flex flex-col bg-zinc-950 border-zinc-800 text-zinc-100 p-0 gap-0">
         <DialogHeader className="px-5 pt-5 pb-0">
-          <DialogTitle className="truncate text-zinc-100">{taskTitle}</DialogTitle>
+          <DialogTitle className="truncate text-zinc-100">
+            {taskTitle}
+          </DialogTitle>
         </DialogHeader>
 
         {/* Tabs */}

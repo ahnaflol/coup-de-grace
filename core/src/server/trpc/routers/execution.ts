@@ -147,6 +147,31 @@ export const executionRouter = router({
       }
     }),
 
+  getTaskEvents: publicProcedure
+    .input(z.object({ planId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.db
+        .select({
+          id: agentEvents.id,
+          taskId: agentEvents.taskId,
+          type: agentEvents.type,
+          data: agentEvents.data,
+          sequenceNum: agentEvents.sequenceNum,
+        })
+        .from(agentEvents)
+        .innerJoin(tasks, eq(agentEvents.taskId, tasks.id))
+        .where(eq(tasks.planId, input.planId))
+        .orderBy(asc(agentEvents.createdAt), asc(agentEvents.id));
+
+      const byTaskId: Record<string, { id: string; taskId: string; type: string; data: unknown; sequenceNum: number }[]> = {};
+      for (const row of rows) {
+        const typedRow = { ...row, type: toAgentEventType(row.type) };
+        if (!byTaskId[row.taskId]) byTaskId[row.taskId] = [];
+        byTaskId[row.taskId].push(typedRow);
+      }
+      return byTaskId;
+    }),
+
   getTaskStatuses: publicProcedure
     .input(z.object({ planId: z.string() }))
     .query(async ({ ctx, input }) => {

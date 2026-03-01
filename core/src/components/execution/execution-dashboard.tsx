@@ -1,24 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { trpc } from "@/lib/trpc";
 import type { TaskEvent, TaskStatus } from "@/types";
-import type { TaskMode } from "@/lib/constants";
-import { TaskGrid } from "./task-grid";
-import { ExtractionPanel } from "./extraction-panel";
-import Link from "next/link";
-import { Swords, Database, Monitor } from "lucide-react";
+import { ExecutionHeader, type ExecutionTab } from "./execution-header";
+import { ResultsView } from "./results-view";
+
+const GlobeView = dynamic(
+  () => import("./globe/globe-view").then((m) => m.GlobeView),
+  { ssr: false },
+);
 
 export interface TaskEventWithTime extends TaskEvent {
   receivedAt: Date;
 }
-
-const STATUS_DOTS: Record<TaskStatus, { color: string; pulse: boolean; label: string }> = {
-  running:   { color: "bg-emerald-400", pulse: true,  label: "running" },
-  completed: { color: "bg-emerald-600", pulse: false, label: "done" },
-  failed:    { color: "bg-red-500",     pulse: false, label: "failed" },
-  pending:   { color: "bg-zinc-500",    pulse: false, label: "pending" },
-};
 
 type DashboardTab = "agents" | "data";
 const EMPTY_TASKS: Array<{
@@ -33,6 +29,8 @@ const EMPTY_TASKS: Array<{
   result: unknown;
 }> = [];
 
+=======
+>>>>>>> main
 export function ExecutionDashboard({ planId }: { planId: string }) {
   const storageKey = `coup:lastEventId:${planId}`;
   const [subscriptionLastEventId] = useState<string | null>(() => {
@@ -46,21 +44,49 @@ export function ExecutionDashboard({ planId }: { planId: string }) {
   const [eventsByTaskId, setEventsByTaskId] = useState<
     Record<string, TaskEventWithTime[]>
   >({});
-  const [activeTab, setActiveTab] = useState<DashboardTab>("agents");
-
-  const planQuery = trpc.plan.get.useQuery({ planId });
-  const mode = (planQuery.data?.mode ?? "testing") as TaskMode;
-  const isDataMigration = mode === "data-migration";
+  const seenEventIds = useRef(new Set<string>());
+  const [activeTab, setActiveTab] = useState<ExecutionTab>("preview");
 
   const tasksQuery = trpc.execution.getTaskStatuses.useQuery(
     { planId },
     { refetchInterval: 2000 }
   );
 
+  // Fetch historical events from DB so steps/logs load on page refresh or new tab
+  const historicalEventsQuery = trpc.execution.getTaskEvents.useQuery(
+    { planId },
+    { refetchOnWindowFocus: false }
+  );
+
+  // Seed eventsByTaskId with historical data once loaded
+  useEffect(() => {
+    const data = historicalEventsQuery.data;
+    if (!data) return;
+    setEventsByTaskId((prev) => {
+      const next = { ...prev };
+      for (const [taskId, events] of Object.entries(data)) {
+        const existing = next[taskId] ?? [];
+        const newEvents: TaskEventWithTime[] = [];
+        for (const e of events) {
+          if (!seenEventIds.current.has(e.id)) {
+            seenEventIds.current.add(e.id);
+            newEvents.push({ ...e, receivedAt: new Date() } as TaskEventWithTime);
+          }
+        }
+        if (newEvents.length > 0) {
+          next[taskId] = [...newEvents, ...existing];
+        }
+      }
+      return next;
+    });
+  }, [historicalEventsQuery.data]);
+
   trpc.execution.onAgentEvent.useSubscription(
     { planId, lastEventId: subscriptionLastEventId },
     {
       onData(event) {
+        if (seenEventIds.current.has(event.id)) return;
+        seenEventIds.current.add(event.id);
         try {
           sessionStorage.setItem(storageKey, event.id);
         } catch {
@@ -84,9 +110,12 @@ export function ExecutionDashboard({ planId }: { planId: string }) {
     }
   );
 
-  const tasks = tasksQuery.data ?? EMPTY_TASKS;
+  const tasks = tasksQuery.data ?? [];
 
-  // Compute counts for stats strip
+  const logsByTaskId = useMemo(() => {
+    return eventsByTaskId;
+  }, [eventsByTaskId]);
+
   const counts = useMemo(() => {
     const c: Record<TaskStatus, number> = { pending: 0, running: 0, completed: 0, failed: 0 };
     for (const t of tasks) {
@@ -107,64 +136,16 @@ export function ExecutionDashboard({ planId }: { planId: string }) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Slim header bar with branding + stats */}
-      <div className="flex items-center justify-between px-4 h-10 bg-zinc-950 border-b border-zinc-800/60 shrink-0">
-        <Link href="/plan" className="flex items-center gap-2">
-          <Swords className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold tracking-tight text-zinc-200">
-            Coup de Grace
-          </span>
-        </Link>
-
-        <div className="flex items-center gap-4 text-[11px] text-zinc-400 font-mono">
-          {(["running", "completed", "failed", "pending"] as TaskStatus[]).map((status) => {
-            const cfg = STATUS_DOTS[status];
-            if (counts[status] === 0) return null;
-            return (
-              <span key={status} className="flex items-center gap-1.5">
-                <span className={`size-1.5 rounded-full ${cfg.color} ${cfg.pulse ? "animate-pulse" : ""}`} />
-                {counts[status]} {cfg.label}
-              </span>
-            );
-          })}
-          {isDataMigration && extractedRowCount > 0 && (
-            <span className="flex items-center gap-1.5">
-              <Database className="h-3 w-3 text-primary" />
-              {extractedRowCount} row{extractedRowCount !== 1 ? "s" : ""}
-            </span>
-          )}
-          {tasks.length > 0 && (
-            <span className="text-zinc-600">
-              {tasks.length} total
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Tab bar for data-migration mode */}
-      {isDataMigration && (
-        <div className="flex gap-1 px-4 bg-zinc-950 border-b border-zinc-800/60 shrink-0">
-          <DashboardTabButton active={activeTab === "agents"} onClick={() => setActiveTab("agents")}>
-            <Monitor className="h-3.5 w-3.5" />
-            Agents
-          </DashboardTabButton>
-          <DashboardTabButton active={activeTab === "data"} onClick={() => setActiveTab("data")}>
-            <Database className="h-3.5 w-3.5" />
-            Data
-            {extractedRowCount > 0 && (
-              <span className="text-[10px] text-zinc-500">
-                ({extractedRowCount})
-              </span>
-            )}
-          </DashboardTabButton>
-        </div>
-      )}
-
-      {/* Content */}
-      {isDataMigration && activeTab === "data" ? (
-        <ExtractionPanel eventsByTaskId={eventsByTaskId} tasks={tasks} />
+      <ExecutionHeader
+        counts={counts}
+        total={tasks.length}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
+      {activeTab === "preview" ? (
+        <GlobeView tasks={tasks} logsByTaskId={logsByTaskId} />
       ) : (
-        <TaskGrid tasks={tasks} logsByTaskId={eventsByTaskId} mode={mode} />
+        <ResultsView tasks={tasks} />
       )}
     </div>
   );

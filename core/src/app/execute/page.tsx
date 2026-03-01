@@ -10,7 +10,7 @@ export default async function ExecutePage({
   if (!planId) redirect("/plan");
 
   return (
-    <div className="flex h-screen flex-col bg-black overflow-hidden">
+    <div className="flex h-screen flex-col bg-background overflow-hidden">
       <ExecutionDashboard planId={planId} />
     </div>
   );

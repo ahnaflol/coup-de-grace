@@ -5,7 +5,7 @@ import { basename, resolve } from "path";
 import { Command } from "commander";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
-import open from "open";
+
 import { db } from "../server/db";
 import { plans } from "../server/db/schema";
 import { parseMarkdownToPlan } from "./parse-markdown";
@@ -117,15 +117,13 @@ If the application does not require authentication, explicitly bypass with:
     ],
   });
 
-  await Promise.all([
-    open(executionUrl),
-    client.execution.start.mutate({ planId: insertedPlan.id }),
-  ]);
+  await client.execution.start.mutate({ planId: insertedPlan.id });
 
   console.log(`\n[5/5] Execution started successfully!`);
   console.log(`  Plan: "${parsedPlan.title}"`);
   console.log(`  Tasks: ${parsedPlan.tasks.length}`);
   console.log(`  View: ${executionUrl}`);
+  console.log(`\n__EXECUTION_URL__=${executionUrl}`);
 
   process.exit(0);
 }
