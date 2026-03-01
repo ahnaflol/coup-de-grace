@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../index";
-import { plans, tasks, agentEvents } from "../../db/schema";
+import { tasks, agentEvents, extractedRows } from "../../db/schema";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { tracked } from "@trpc/server";
-import { orchestrate } from "../../agents/orchestrator";
 import { agentEventEmitter, type AgentEvent } from "../../agents/events";
 import type { AgentEventType, TaskStatus } from "../../../types";
+import { startApprovedPlanExecution } from "@/server/execution/start-plan-execution";
 
 const AGENT_EVENT_TYPES = [
   "step",
@@ -13,6 +13,7 @@ const AGENT_EVENT_TYPES = [
   "error",
   "completed",
   "failed",
+  "row_extracted",
 ] as const satisfies readonly AgentEventType[];
 
 function toAgentEventType(value: string): AgentEventType {
@@ -38,28 +39,10 @@ export const executionRouter = router({
   start: publicProcedure
     .input(z.object({ planId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const [locked] = await ctx.db
-        .update(plans)
-        .set({ status: "executing", updatedAt: new Date() })
-        .where(and(eq(plans.id, input.planId), eq(plans.status, "approved")))
-        .returning({ id: plans.id });
-
-      if (!locked) {
-        const [plan] = await ctx.db
-          .select({ id: plans.id, status: plans.status })
-          .from(plans)
-          .where(eq(plans.id, input.planId))
-          .limit(1);
-        if (!plan) throw new Error("Plan not found");
-        throw new Error(
-          `Plan must be approved before execution (current status: ${plan.status})`
-        );
-      }
-
-      // Fire-and-forget
-      orchestrate(input.planId).catch(console.error);
-
-      return { started: true, planId: input.planId };
+      return startApprovedPlanExecution({
+        db: ctx.db,
+        planId: input.planId,
+      });
     }),
 
   onAgentEvent: publicProcedure
@@ -183,5 +166,24 @@ export const executionRouter = router({
         .where(eq(tasks.planId, input.planId));
 
       return rows.map((r) => ({ ...r, status: toTaskStatus(r.status) }));
+    }),
+
+  getExtractedRows: publicProcedure
+    .input(z.object({ planId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.db
+        .select({
+          id: extractedRows.id,
+          planId: extractedRows.planId,
+          taskId: extractedRows.taskId,
+          rowIndex: extractedRows.rowIndex,
+          data: extractedRows.data,
+          createdAt: extractedRows.createdAt,
+        })
+        .from(extractedRows)
+        .where(eq(extractedRows.planId, input.planId))
+        .orderBy(asc(extractedRows.createdAt));
+
+      return rows;
     }),
 });
