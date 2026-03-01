@@ -133,4 +133,4 @@ The CLI reads from `.env` (loaded via `tsx --env-file=.env`):
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `MISTRAL_API_KEY` | Yes | For magistral-medium plan parsing |
 | `BROWSER_USE_API_KEY` | Yes | For CUA agent execution |
-| `PORT` | No | Dev server port (default: 3000) |
+| `PORT` | No | Dev server port (default: 3000). Note: spothub runs on port 4000 to avoid conflicts |

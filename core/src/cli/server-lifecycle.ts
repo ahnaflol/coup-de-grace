@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import { createConnection } from "net";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 
 export function isPortInUse(port: number): Promise<boolean> {
   return new Promise((res) => {
@@ -32,7 +33,11 @@ export async function ensureDevServer(port: number): Promise<void> {
 
   console.log(`  Starting dev server on port ${port}...`);
 
-  const coreDir = resolve(import.meta.dirname, "../..");
+  const currentDir =
+    typeof import.meta.dirname === "string"
+      ? import.meta.dirname
+      : dirname(fileURLToPath(import.meta.url));
+  const coreDir = resolve(currentDir, "../..");
 
   const child = spawn("bun", ["dev"], {
     cwd: coreDir,
@@ -57,6 +62,6 @@ export async function ensureDevServer(port: number): Promise<void> {
   }
 
   throw new Error(
-    `Dev server failed to start within ${timeoutMs / 1000} seconds`
+    `Dev server failed to start within ${timeoutMs / 1000} seconds`,
   );
 }

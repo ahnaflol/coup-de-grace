@@ -6,9 +6,9 @@
     "coupdegrace": "./src/cli/index.ts"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 3000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --port 3000",
     "lint": "eslint",
     "db:push": "drizzle-kit push --verbose",
     "coupdegrace": "tsx --env-file=.env src/cli/index.ts"
