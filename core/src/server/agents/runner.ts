@@ -80,7 +80,7 @@ export async function runAgent(input: {
     const run = client.run(instruction, {
       sessionId,
       schema: agentResultSchema,
-      maxSteps: 25,
+      maxSteps: 50,
       startUrl,
       allowedDomains,
       highlightElements: true,

@@ -34,7 +34,7 @@ Rules:
 
 6. AUTHENTICATION: If credentials are provided, every task that requires a logged-in state must include explicit login steps at the beginning of its instruction (navigate to login page, enter username, enter password, click login, wait for redirect).
 
-7. TASK LENGTH: Keep each task under 25 browser steps. Each step should be a concrete browser action (click, type, navigate, scroll, wait, verify).
+7. TASK LENGTH: Keep each task under 50 browser steps. Each step should be a concrete browser action (click, type, navigate, scroll, wait, verify).
 
 8. VERIFICATION: Every task must end with verification steps that check the expected outcome (element visible, text present, URL changed, state updated, etc.).
 

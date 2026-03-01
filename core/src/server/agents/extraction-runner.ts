@@ -80,7 +80,7 @@ export async function runExtractionAgent(input: {
     const run = client.run(instruction, {
       sessionId,
       schema: extractionResultSchema,
-      maxSteps: 25,
+      maxSteps: 50,
       startUrl,
       allowedDomains,
       highlightElements: true,

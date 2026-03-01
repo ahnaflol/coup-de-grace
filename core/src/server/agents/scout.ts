@@ -63,7 +63,7 @@ const FALLBACK_LLM: SupportedLLMs = "gpt-4.1";
 const SCOUT_RUN_OPTIONS = {
   schema: observationsSchema,
   vision: true,
-  maxSteps: 15,
+  maxSteps: 50,
   thinking: true,
   systemPromptExtension:
     "You are scouting this application to help generate a test plan. Focus on discovering testable interactions, form fields, navigation flows, and data displays.",
