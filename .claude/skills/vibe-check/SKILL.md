@@ -121,4 +121,16 @@ Without authentication:
 bun run coupdegrace --from-markdown "<path-to-plan.md>" --target-url "<tunnel-url>" --skip-auth-credentials
 ```
 
-This parses the test plan, starts the execution dashboard, and launches parallel CUA agents. Your browser will open to show real-time execution progress - each agent's browser session is visible as it runs through its assigned test case.
+This parses the test plan, starts the execution dashboard, and launches parallel CUA agents.
+
+## 6. Extract and Present the Dashboard URL
+
+The CLI outputs a line in the format `__EXECUTION_URL__=<url>` when execution starts successfully. After the CLI finishes, read the output and extract this URL using grep:
+
+```bash
+grep '__EXECUTION_URL__=' <output> | sed 's/__EXECUTION_URL__=//'
+```
+
+**You MUST present this URL to the user** so they can open the execution dashboard in their browser. Format it clearly, e.g.:
+
+> Dashboard: http://localhost:3000/execute?planId=<id>

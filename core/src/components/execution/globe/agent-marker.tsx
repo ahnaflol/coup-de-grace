@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { CheckCircle2, XCircle } from "lucide-react";
+import * as THREE from "three";
 import type { Mesh } from "three";
 import type { TaskStatus } from "@/types";
 
@@ -53,10 +54,12 @@ export function AgentMarker({
   onClick: () => void;
 }) {
   const ref = useRef<Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState(false);
   const isDone = status === "completed" || status === "failed";
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
     if (!ref.current) return;
     if (status === "running") {
       const s = 1 + Math.sin(clock.getElapsedTime() * 3) * 0.15;
@@ -64,10 +67,28 @@ export function AgentMarker({
     } else {
       ref.current.scale.setScalar(1);
     }
+
+    // Scale cards based on whether they face the camera
+    if (cardRef.current) {
+      const markerPos = new THREE.Vector3(...position);
+      const camDir = new THREE.Vector3().subVectors(camera.position, markerPos).normalize();
+      const markerNormal = markerPos.clone().normalize();
+      const dot = camDir.dot(markerNormal); // 1 = facing camera, -1 = facing away
+
+      // Map dot to scale: facing camera → 1.3, facing away → 0.5
+      const t = THREE.MathUtils.clamp((dot + 1) / 2, 0, 1); // 0..1
+      const scale = THREE.MathUtils.lerp(0.7, 1.3, t);
+      const w = Math.round(160 * scale);
+      const h = Math.round(106 * scale);
+      cardRef.current.style.width = `${w}px`;
+      cardRef.current.style.height = `${h}px`;
+      // Scale the 1280×900 iframe to fit the card
+      cardRef.current.style.setProperty("--iframe-scale", String(w / 1280));
+    }
   });
 
   return (
-    <group position={position}>
+    <group ref={groupRef} position={position}>
       {/* Small pin dot on globe surface */}
       <mesh
         ref={ref}
@@ -99,6 +120,7 @@ export function AgentMarker({
         zIndexRange={[99997, 0]}
       >
         <div
+          ref={cardRef}
           onClick={(e) => {
             e.stopPropagation();
             onClick();
@@ -116,7 +138,7 @@ export function AgentMarker({
             transition-transform duration-200
             ${hovered ? "scale-110 border-zinc-500 z-50" : "border-zinc-800"}
           `}
-          style={{ width: 180, height: 120 }}
+          style={{ width: 160, height: 106, "--iframe-scale": String(160 / 1280), transition: "width 0.15s ease-out, height 0.15s ease-out" } as React.CSSProperties}
         >
           {/* Card content — mirrors TaskCard */}
           {isDone ? (
@@ -144,12 +166,19 @@ export function AgentMarker({
               })()}
             </div>
           ) : liveUrl ? (
-            <iframe
-              src={liveUrl}
-              className="absolute inset-0 h-full w-full border-0 pointer-events-none"
-              allow="clipboard-read; clipboard-write"
-              referrerPolicy="no-referrer"
-            />
+            <div className="absolute inset-0 overflow-hidden">
+              <iframe
+                src={liveUrl}
+                className="border-0 pointer-events-none origin-top-left"
+                style={{
+                  width: 1280,
+                  height: 900,
+                  transform: "scale(var(--iframe-scale))",
+                }}
+                allow="clipboard-read; clipboard-write"
+                referrerPolicy="no-referrer"
+              />
+            </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center px-2">
               <span className="text-[9px] text-zinc-600 text-center leading-tight line-clamp-3">
@@ -157,21 +186,6 @@ export function AgentMarker({
               </span>
             </div>
           )}
-
-          {/* Status dot */}
-          <div className="absolute bottom-1 left-1 z-10">
-            <span
-              className={`block size-1.5 rounded-full ${
-                status === "running"
-                  ? "bg-emerald-400 animate-pulse"
-                  : status === "completed"
-                  ? "bg-emerald-600"
-                  : status === "failed"
-                  ? "bg-red-500"
-                  : "bg-zinc-600"
-              }`}
-            />
-          </div>
 
           {/* Hover overlay with title */}
           {hovered && (
