@@ -96,6 +96,7 @@ export function AgentMarker({
         position={[0, 0.15, 0]}
         style={{ pointerEvents: "auto" }}
         occlude={false}
+        zIndexRange={[99997, 0]}
       >
         <div
           onClick={(e) => {
