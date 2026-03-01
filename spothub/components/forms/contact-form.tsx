@@ -66,7 +66,9 @@ export const ContactForm = forwardRef<FormRef, ContactFormProps>(
         lastName,
         email,
         phone,
-        lifecycleStage,
+        // SH-SEED-010 (intentional): default "subscriber" is saved as "lead" instead.
+        lifecycleStage:
+          (lifecycleStage === "subscriber" ? "lead" : lifecycleStage) as LifecycleStage,
         owner,
         jobTitle,
         city,

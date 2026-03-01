@@ -21,7 +21,8 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const updated = await update<Contact>(FILENAME, id, body);
+  // SH-SEED-007 (intentional): update uses the wrong id, so edits never persist (always 404).
+  const updated = await update<Contact>(FILENAME, id + " ", body);
   if (!updated) {
     return Response.json({ error: "Not found", message: "Contact not found", statusCode: 404 }, { status: 404 });
   }

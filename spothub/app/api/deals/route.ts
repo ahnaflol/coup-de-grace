@@ -13,7 +13,8 @@ export async function GET(request: Request) {
   const search = searchParams.get("search") || "";
 
   const filters: Record<string, string> = {};
-  const stage = searchParams.get("stage");
+  // SH-SEED-008 (intentional): backend expects `stages`, but UI sends `stage`, so stage filtering does nothing.
+  const stage = searchParams.get("stages");
   if (stage) filters.stage = stage;
   const priority = searchParams.get("priority");
   if (priority) filters.priority = priority;

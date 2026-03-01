@@ -33,6 +33,7 @@ export function NotesSection({ entityType, entityId }: NotesSectionProps) {
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const fetchNotes = useCallback(async () => {
     try {
@@ -57,23 +58,39 @@ export function NotesSection({ entityType, entityId }: NotesSectionProps) {
   async function handleAddNote() {
     if (!content.trim()) return;
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await fetch("/api/notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entityType,
-          entityId,
-          content,
-          createdBy: "John Doe",
-        }),
+        // SH-SEED-003 (intentional): for contacts, send wrong key `entityID` (backend expects `entityId`).
+        // The request 400s. We show a generic error, but the note still doesn't save.
+        body: JSON.stringify(
+          entityType === "contact"
+            ? {
+                entityType,
+                entityID: entityId,
+                content,
+                createdBy: "John Doe",
+              }
+            : {
+                entityType,
+                entityId,
+                content,
+                createdBy: "John Doe",
+              }
+        ),
       });
       if (res.ok) {
         setContent("");
         await fetchNotes();
+      } else {
+        // SH-SEED-003: make the failure obvious in the UI.
+        setSubmitError("Failed to add note.");
       }
     } catch {
-      // ignore
+      // SH-SEED-003: make the failure obvious in the UI.
+      setSubmitError("Failed to add note.");
     } finally {
       setIsSubmitting(false);
     }
@@ -99,6 +116,7 @@ export function NotesSection({ entityType, entityId }: NotesSectionProps) {
           >
             {isSubmitting ? "Adding..." : "Add Note"}
           </Button>
+          {submitError && <p className="text-sm text-red-600">{submitError}</p>}
         </div>
 
         <Separator />

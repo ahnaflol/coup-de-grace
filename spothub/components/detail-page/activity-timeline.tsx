@@ -9,7 +9,8 @@ const filterTabs: { label: string; value: string }[] = [
   { label: "All", value: "all" },
   { label: "Emails", value: "email" },
   { label: "Calls", value: "call" },
-  { label: "Notes", value: "note" },
+  // SH-SEED-005 (intentional): wrong filter value ("notes" vs "note") so Notes tab is always empty.
+  { label: "Notes", value: "notes" },
   { label: "Meetings", value: "meeting" },
 ];
 
