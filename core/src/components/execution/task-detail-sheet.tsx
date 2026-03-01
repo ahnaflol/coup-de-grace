@@ -441,20 +441,24 @@ export function TaskDetailSheet({
   result,
   events,
   status,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   taskTitle: string;
   result: unknown;
   events: TaskEventWithTime[];
   status: TaskStatus;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const steps = extractSteps(events);
   const defaultTab: TabKey = steps.length > 0 ? "steps" : "results";
   const [tab, setTab] = useState<TabKey>(defaultTab);
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+    <Dialog open={controlledOpen} onOpenChange={controlledOnOpenChange}>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent className="sm:max-w-6xl max-h-[85vh] flex flex-col bg-zinc-950 border-zinc-800 text-zinc-100 p-0 gap-0">
         <DialogHeader className="px-5 pt-5 pb-0">
           <DialogTitle className="truncate text-zinc-100">{taskTitle}</DialogTitle>
