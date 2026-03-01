@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Variants } from "framer-motion";
@@ -51,11 +51,16 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function computeLineCount(text: string): number {
+  return text === "" ? 1 : text.split("\n").length;
+}
+
 export function PromptInput({ onSubmit }: PromptInputProps) {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<TaskMode>(TASK_MODES[0].id);
   const [files, setFiles] = useState<File[]>([]);
   const [isFocused, setIsFocused] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const onDrop = useCallback((accepted: File[]) => {
     setFiles((prev) => [...prev, ...accepted]);
@@ -72,30 +77,47 @@ export function PromptInput({ onSubmit }: PromptInputProps) {
     noKeyboard: true,
   });
 
-  function removeFile(index: number) {
+  function removeFile(index: number): void {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function handleSubmit() {
+  function handleSubmit(): void {
     if (prompt.trim()) {
       onSubmit(prompt.trim(), mode);
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && prompt.trim()) {
       e.preventDefault();
       handleSubmit();
     }
   }
 
+  // Sync textarea scroll with line numbers
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    const lineNumbers = lineNumbersRef.current;
+    if (!textarea || !lineNumbers) return;
+
+    function syncScroll(): void {
+      if (lineNumbers && textarea) {
+        lineNumbers.scrollTop = textarea.scrollTop;
+      }
+    }
+
+    textarea.addEventListener("scroll", syncScroll);
+    return () => textarea.removeEventListener("scroll", syncScroll);
+  }, []);
+
   const hasPrompt = prompt.trim().length > 0;
+  const lineCount = computeLineCount(prompt);
+
+  const statusLabel = hasPrompt ? "COMPOSING" : "READY";
 
   return (
-    <div
-      {...getRootProps()}
-      className="mx-auto w-full max-w-2xl px-4"
-    >
+    <div {...getRootProps()} className="mx-auto w-full max-w-4xl px-4">
       <input {...getInputProps()} />
 
       <motion.div
@@ -103,197 +125,285 @@ export function PromptInput({ onSubmit }: PromptInputProps) {
         initial="hidden"
         animate="visible"
       >
-      {/* Gradient border wrapper */}
-      <motion.div variants={itemVariants}>
-        <div
-          className={cn(
-            "rounded-xl p-px bg-gradient-to-b transition-all duration-500",
-            isDragActive
-              ? "from-primary/40 via-primary/15 to-border/30"
-              : isFocused
-                ? "from-primary/40 via-primary/15 to-border/30"
-                : "from-primary/25 via-border/40 to-border/20"
-          )}
-        >
-          {/* Inner panel */}
+        <motion.div variants={itemVariants}>
+          {/* Card with scanline + dot-matrix textures */}
           <div
             className={cn(
-              "relative rounded-xl bg-card/80 backdrop-blur-sm overflow-hidden",
-              "bg-[radial-gradient(ellipse_at_top,rgba(220,120,80,0.03)_0%,transparent_60%)]"
+              "relative overflow-hidden rounded-md border border-primary/10 bg-card",
+              "transition-shadow duration-300",
+              isDragActive && "ring-1 ring-primary/20",
             )}
-            style={
-              isFocused
-                ? {
-                    boxShadow:
-                      "0 0 0 1px rgba(220,120,80,0.1), 0 0 30px rgba(220,120,80,0.05)",
-                  }
-                : undefined
-            }
+            style={{
+              boxShadow: isFocused
+                ? "0 0 0 1px rgba(var(--primary-rgb, 220 120 80) / 0.08), 0 4px 24px rgba(0,0,0,0.06)"
+                : "0 4px 24px rgba(0,0,0,0.04)",
+            }}
           >
-            {/* Top accent line */}
+            {/* Scanline overlay */}
+            <div
+              className="pointer-events-none absolute inset-0 z-[1]"
+              style={{
+                background:
+                  "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(var(--primary-rgb, 220 120 80) / 0.015) 2px, rgba(var(--primary-rgb, 220 120 80) / 0.015) 4px)",
+              }}
+            />
+
+            {/* Dot-matrix overlay */}
+            <div
+              className="pointer-events-none absolute inset-0 z-0 opacity-25"
+              style={{
+                backgroundImage:
+                  "radial-gradient(circle, rgba(var(--primary-rgb, 220 120 80) / 0.05) 1px, transparent 1px)",
+                backgroundSize: "16px 16px",
+              }}
+            />
+
+            {/* Top edge accent line */}
             <div
               className={cn(
                 "h-px transition-colors duration-500",
-                isFocused ? "bg-primary/50" : "bg-primary/20"
+                isFocused ? "bg-primary/40" : "bg-primary/20",
               )}
             />
 
-            {/* Header strip */}
-            <motion.div
-              variants={itemVariants}
-              className="flex items-center justify-between px-5 py-3 border-b border-border/30"
-            >
-              {/* Left: label */}
-              <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground/60 select-none">
-                Mission Briefing
-              </span>
-
-              {/* Center: mode selector */}
-              <div className="flex items-center gap-1">
-                {TASK_MODES.map((m) => {
-                  const Icon = MODE_ICONS[m.id];
-                  const isActive = mode === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setMode(m.id)}
-                      className={cn(
-                        "group relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-200",
-                        isActive
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-primary/[0.06]"
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5 group-hover:scale-110 transition-transform duration-300" />
-                      <span>{m.label}</span>
-                      {isActive && (
-                        <motion.div
-                          layoutId="mode-indicator"
-                          className="absolute -bottom-[13px] inset-x-1 h-px bg-primary/60"
-                          transition={{
-                            type: "spring",
-                            stiffness: 400,
-                            damping: 30,
-                          }}
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Right: character count */}
-              <span className="font-mono text-[11px] tabular-nums text-muted-foreground/40 select-none">
-                {prompt.length}
-              </span>
-            </motion.div>
-
-            {/* Textarea */}
-            <motion.div variants={itemVariants}>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                onKeyDown={handleKeyDown}
-                placeholder="Describe what the agents should do. Be specific about flows, edge cases, and expected outcomes..."
-                className={cn(
-                  "w-full min-h-[180px] px-5 py-4 bg-transparent border-0 outline-none resize-none",
-                  "text-sm leading-relaxed text-foreground",
-                  "placeholder:text-muted-foreground/30",
-                  "font-sans"
-                )}
-              />
-            </motion.div>
-
-            {/* Footer bar */}
-            <motion.div
-              variants={itemVariants}
-              className="flex items-center justify-between px-5 py-3 border-t border-border/30"
-            >
-              {/* Left: file drop zone + file badges */}
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <label className="flex items-center gap-1.5 text-xs text-muted-foreground/40 cursor-pointer hover:text-muted-foreground/60 transition-colors shrink-0">
-                  <Paperclip className="h-3.5 w-3.5" />
-                  <span>Attach files</span>
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".json,.txt,.csv"
-                    multiple
-                    onChange={(e) => {
-                      const selected = e.target.files;
-                      if (selected && selected.length > 0) {
-                        setFiles((prev) => [
-                          ...prev,
-                          ...Array.from(selected),
-                        ]);
-                      }
-                      e.target.value = "";
+            {/* Content above textures */}
+            <div className="relative z-10">
+              {/* Header */}
+              <motion.div
+                variants={itemVariants}
+                className="flex items-center justify-between px-5 py-3"
+              >
+                {/* Left: status dot + label */}
+                <div className="flex items-center gap-2.5 select-none">
+                  <div
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full bg-primary",
+                      !hasPrompt && "animate-pulse",
+                    )}
+                    style={{
+                      boxShadow: "0 0 6px rgba(var(--primary-rgb, 220 120 80) / 0.35)",
                     }}
                   />
-                </label>
+                  <span className="font-mono text-xs font-medium uppercase tracking-wider text-primary/60">
+                    <span className="text-primary/25">[</span>
+                    {" "}Mission Briefing{" "}
+                    <span className="text-primary/25">]</span>
+                  </span>
+                </div>
 
-                <AnimatePresence mode="popLayout">
-                  {files.map((file, index) => (
-                    <motion.span
-                      key={`${file.name}-${index}`}
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      className="inline-flex items-center gap-1 font-mono text-[10px] border border-border/40 bg-muted/30 rounded-md px-2 py-0.5"
-                    >
-                      <FileText className="h-2.5 w-2.5 text-muted-foreground/50" />
-                      <span className="max-w-[100px] truncate text-muted-foreground/70">
-                        {file.name}
-                      </span>
-                      <span className="text-muted-foreground/40">
-                        {formatSize(file.size)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeFile(index);
-                        }}
-                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20 transition-colors"
-                      >
-                        <X className="h-2.5 w-2.5 text-muted-foreground/50" />
-                      </button>
-                    </motion.span>
-                  ))}
-                </AnimatePresence>
-              </div>
-
-              {/* Right: deploy button + hint */}
-              <div className="flex items-center gap-3 shrink-0">
-                {hasPrompt && (
-                  <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="font-mono text-[10px] text-muted-foreground/30 select-none"
-                  >
-                    Cmd+Enter
-                  </motion.span>
-                )}
-                <Button
-                  onClick={handleSubmit}
-                  disabled={!hasPrompt}
+                {/* Right: status label */}
+                <span
                   className={cn(
-                    "group gap-2 transition-shadow duration-300",
-                    hasPrompt &&
-                      "shadow-[0_0_12px_rgba(220,120,80,0.15)] hover:shadow-[0_0_20px_rgba(220,120,80,0.25)]"
+                    "font-mono text-[10px] uppercase tracking-widest transition-colors duration-200",
+                    hasPrompt ? "text-primary/50" : "text-primary/25",
                   )}
                 >
-                  Deploy
-                  <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
-                </Button>
-              </div>
-            </motion.div>
+                  {statusLabel}
+                </span>
+              </motion.div>
+
+              {/* Accent divider */}
+              <div className="mx-5 h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent" />
+
+              {/* Mode selector */}
+              <motion.div variants={itemVariants} className="px-5 py-3">
+                <div className="flex rounded-md border border-primary/8 bg-muted/30">
+                  {TASK_MODES.map((m) => {
+                    const Icon = MODE_ICONS[m.id];
+                    const isActive = mode === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setMode(m.id)}
+                        className={cn(
+                          "relative flex flex-1 items-center justify-center gap-1.5 border-r border-primary/8 px-3 py-2 font-mono text-xs tracking-wide transition-all duration-150 last:border-r-0",
+                          isActive
+                            ? "bg-primary/5 text-primary"
+                            : "text-muted-foreground/40 hover:text-muted-foreground/70 hover:bg-primary/[0.02]",
+                        )}
+                      >
+                        <Icon className="h-3 w-3" />
+                        <span>{m.label}</span>
+                        {isActive && (
+                          <motion.div
+                            layoutId="mode-underline"
+                            className="absolute inset-x-0 -bottom-px h-0.5 bg-primary"
+                            style={{
+                              boxShadow:
+                                "0 0 6px rgba(var(--primary-rgb, 220 120 80) / 0.25)",
+                            }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 400,
+                              damping: 30,
+                            }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+
+              {/* Textarea with line numbers */}
+              <motion.div variants={itemVariants} className="relative px-5 pb-2">
+                <div className="relative">
+                  {/* Line number gutter */}
+                  <div
+                    ref={lineNumbersRef}
+                    className="pointer-events-none absolute bottom-0 left-0 top-0 flex w-8 select-none flex-col overflow-hidden font-mono text-[10px] leading-[calc(0.85rem*1.65)] text-primary/15"
+                    style={{ paddingTop: "0.75rem" }}
+                  >
+                    {Array.from({ length: lineCount }, (_, i) => (
+                      <span key={i}>{String(i + 1).padStart(2, "0")}</span>
+                    ))}
+                  </div>
+
+                  <textarea
+                    ref={textareaRef}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={() => setIsFocused(false)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Describe what the agents should do. Be specific about flows, edge cases, and expected outcomes..."
+                    maxLength={4000}
+                    className={cn(
+                      "w-full min-h-[180px] rounded border border-primary/10 bg-background/50 py-3 pl-9 pr-4",
+                      "font-mono text-sm leading-[calc(0.85rem*1.65)] text-foreground font-medium",
+                      "placeholder:text-muted-foreground/40",
+                      "outline-none resize-none",
+                      "transition-all duration-200",
+                      "focus:border-primary/25",
+                    )}
+                  />
+                </div>
+              </motion.div>
+
+              {/* File badges area */}
+              <AnimatePresence mode="popLayout">
+                {files.length > 0 && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden px-5 pb-3"
+                  >
+                    <div className="flex flex-wrap gap-2">
+                      {files.map((file, index) => (
+                        <motion.span
+                          key={`${file.name}-${index}`}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className="group/file inline-flex items-center gap-2 rounded border border-primary/10 bg-primary/[0.03] px-2.5 py-1.5 font-mono text-[11px] text-primary/60"
+                        >
+                          <FileText className="h-3 w-3 text-primary/30" />
+                          <span className="max-w-[100px] truncate">
+                            {file.name}
+                          </span>
+                          <span className="text-primary/25">
+                            {formatSize(file.size)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFile(index);
+                            }}
+                            className="ml-0.5 text-primary/30 opacity-40 transition-opacity group-hover/file:opacity-100"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </motion.span>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Accent divider */}
+              <div className="mx-5 h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent" />
+
+              {/* Footer */}
+              <motion.div
+                variants={itemVariants}
+                className="flex items-center justify-between px-5 py-3"
+              >
+                {/* Left: attach + char count */}
+                <div className="flex items-center gap-3">
+                  <label className="flex cursor-pointer items-center gap-1.5 rounded border border-primary/8 bg-background/30 px-2.5 py-1.5 font-mono text-[11px] tracking-wide text-primary/40 transition-colors hover:border-primary/20 hover:text-primary/60">
+                    <Paperclip className="h-3 w-3" />
+                    <span>Attach files</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".json,.txt,.csv"
+                      multiple
+                      onChange={(e) => {
+                        const selected = e.target.files;
+                        if (selected && selected.length > 0) {
+                          setFiles((prev) => [
+                            ...prev,
+                            ...Array.from(selected),
+                          ]);
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+
+                  <span
+                    className={cn(
+                      "font-mono text-[10px] tracking-wider transition-colors",
+                      prompt.length > 3600
+                        ? "text-primary/60"
+                        : "text-primary/20",
+                    )}
+                  >
+                    {prompt.length} / 4000
+                  </span>
+                </div>
+
+                {/* Right: kbd hint + deploy */}
+                <div className="flex items-center gap-3">
+                  <AnimatePresence>
+                    {hasPrompt && (
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="font-mono text-[10px] tracking-wide text-primary/25 select-none"
+                      >
+                        <kbd className="rounded border border-primary/10 bg-primary/[0.04] px-1.5 py-0.5">
+                          Cmd
+                        </kbd>
+                        <span className="mx-0.5">+</span>
+                        <kbd className="rounded border border-primary/10 bg-primary/[0.04] px-1.5 py-0.5">
+                          Enter
+                        </kbd>
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={!hasPrompt}
+                    className={cn(
+                      "group gap-2 font-mono text-xs font-semibold uppercase tracking-wider transition-shadow duration-300",
+                      hasPrompt &&
+                        "shadow-[0_0_12px_rgba(220,120,80,0.15)] hover:shadow-[0_0_20px_rgba(220,120,80,0.25)]",
+                    )}
+                  >
+                    Deploy
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </Button>
+                </div>
+              </motion.div>
+            </div>
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
       </motion.div>
     </div>
   );

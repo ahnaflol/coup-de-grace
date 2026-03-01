@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { InterviewQuestion } from "@/components/planning/interview-question";
@@ -43,14 +43,14 @@ function getBadgeClassName(isActive: boolean, isAnswered: boolean): string {
 export function QuestionOverlay({ questions, onSubmit }: QuestionOverlayProps) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [activeIndex, setActiveIndex] = useState(0);
-  const directionRef = useRef(0);
+  const [direction, setDirection] = useState(0);
 
   const allAnswered = questions.every((q) => answers[q.id] != null);
   const activeQuestion = questions[activeIndex];
 
   function goTo(index: number): void {
     if (index < 0 || index >= questions.length || index === activeIndex) return;
-    directionRef.current = index > activeIndex ? 1 : -1;
+    setDirection(index > activeIndex ? 1 : -1);
     setActiveIndex(index);
   }
 
@@ -96,7 +96,7 @@ export function QuestionOverlay({ questions, onSubmit }: QuestionOverlayProps) {
         (q, i) => i > activeIndex && updatedAnswers[q.id] == null,
       );
       if (nextUnanswered !== -1) {
-        directionRef.current = 1;
+        setDirection(1);
         setActiveIndex(nextUnanswered);
       }
     }, 300);
@@ -120,7 +120,7 @@ export function QuestionOverlay({ questions, onSubmit }: QuestionOverlayProps) {
       >
         {/* Backdrop */}
         <motion.div
-          className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          className="absolute inset-0 bg-black/20 backdrop-blur-[1px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -174,9 +174,9 @@ export function QuestionOverlay({ questions, onSubmit }: QuestionOverlayProps) {
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
                   key={activeQuestion.id}
-                  initial={{ x: directionRef.current * 40, opacity: 0 }}
+                  initial={{ x: direction * 40, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: directionRef.current * -40, opacity: 0 }}
+                  exit={{ x: direction * -40, opacity: 0 }}
                   transition={{ duration: 0.25, ease: EASE }}
                 >
                   <InterviewQuestion
