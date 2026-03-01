@@ -1,4 +1,4 @@
-import { mistral } from "@ai-sdk/mistral";
+import { anthropic } from "@ai-sdk/anthropic";
 import { generateText } from "ai";
 import { planSchema, type Plan } from "../server/schemas";
 import { MARKDOWN_PARSER_PROMPT } from "./prompt";
@@ -23,12 +23,12 @@ export async function parseMarkdownToPlan(
   userPrompt += `Markdown Testing Plan:\n\n${markdown}`;
 
   const { text } = await generateText({
-    model: mistral("magistral-medium-latest"),
+    model: anthropic("claude-sonnet-4-6"),
     system: MARKDOWN_PARSER_PROMPT,
     prompt: userPrompt,
   });
 
-  // Magistral returns JSON wrapped in markdown code fences - strip them
+  // Model output can be wrapped in markdown code fences; strip if present.
   const jsonStr = text.replace(/^```json\s*\n?/, "").replace(/\n?```\s*$/, "");
 
   let raw: unknown;

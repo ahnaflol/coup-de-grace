@@ -4,7 +4,7 @@ Command-line interface for triggering parallel browser agent testing from a mark
 
 ## How It Works
 
-The CLI takes a markdown testing plan written by a developer (or a coding agent), parses it into structured tasks using Mistral's magistral-medium model, inserts the plan into the database, and launches the execution dashboard where parallel CUA (Computer Use Agent) browser sessions carry out the tests.
+The CLI takes a markdown testing plan written by a developer (or a coding agent), parses it into structured tasks using Anthropic Sonnet 4.6, inserts the plan into the database, and launches the execution dashboard where parallel CUA (Computer Use Agent) browser sessions carry out the tests.
 
 ### Flow
 
@@ -13,7 +13,7 @@ Markdown plan --> Magistral parses into tasks --> DB insert --> Dev server start
 ```
 
 1. **Read** the markdown file
-2. **Parse** it with magistral-medium into a structured plan (10-25 parallel tasks). Each task gets the application context prepended so agents understand what they're testing. This runs in parallel with starting the dev server.
+2. **Parse** it with Sonnet 4.6 into a structured plan. Each task gets the application context prepended so agents understand what they're testing. This runs in parallel with starting the dev server.
 3. **Insert** the plan into PostgreSQL with status "approved"
 4. **Open** the execution dashboard in the browser and trigger the orchestrator via tRPC, which launches all CUA agents in parallel
 
@@ -56,7 +56,7 @@ bun run coupdegrace \
 
 ## Markdown Plan Format
 
-The plan has two sections. The format is flexible -- magistral handles variation -- but the structure matters.
+The plan has two sections. The format is flexible -- Sonnet handles variation -- but the structure matters.
 
 ### Application Context (top of file)
 
@@ -120,7 +120,7 @@ src/cli/
   server-lifecycle.ts -- Dev server auto-start and port detection
 ```
 
-- **parse-markdown.ts** calls magistral-medium, gets raw JSON text back, strips markdown code fences, and validates against `planSchema` from `src/server/schemas.ts`
+- **parse-markdown.ts** calls Sonnet 4.6, gets raw JSON text back, strips markdown code fences, and validates against `planSchema` from `src/server/schemas.ts`
 - **server-lifecycle.ts** checks if the port is in use via TCP socket. If not, spawns `bun dev` as a detached background process and polls until ready (30s timeout)
 - **index.ts** creates its own tRPC client to call `execution.start` on the web server, ensuring the orchestrator and EventEmitter events run in the server process so the execution dashboard gets real-time updates
 
@@ -131,6 +131,6 @@ The CLI reads from `.env` (loaded via `tsx --env-file=.env`):
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `MISTRAL_API_KEY` | Yes | For magistral-medium plan parsing |
+| `ANTHROPIC_API_KEY` | Yes | For Sonnet 4.6 plan parsing |
 | `BROWSER_USE_API_KEY` | Yes | For CUA agent execution |
 | `PORT` | No | Dev server port (default: 3000). Note: spothub runs on port 4000 to avoid conflicts |
