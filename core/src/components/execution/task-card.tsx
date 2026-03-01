@@ -2,13 +2,11 @@
 
 import { TaskDetailSheet } from "./task-detail-sheet";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, Info } from "lucide-react";
+import { CheckCircle2, XCircle, Info, Database } from "lucide-react";
 import type { TaskStatus } from "@/types";
+import type { TaskMode } from "@/lib/constants";
 import type { TaskEventWithTime } from "./execution-dashboard";
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
+import { isRecord } from "@/lib/utils";
 
 function extractResultInfo(result: unknown) {
   if (!isRecord(result)) return null;
@@ -27,6 +25,19 @@ function extractResultInfo(result: unknown) {
   return { passed, outcome, summary, stepCount: stepsCompleted.length };
 }
 
+function extractMigrationResultInfo(result: unknown) {
+  if (!isRecord(result)) return null;
+  const output = isRecord(result.output) ? result.output : null;
+  if (!output) return null;
+  const outcome =
+    typeof output.outcome === "string" ? output.outcome : null;
+  const recordsExtracted =
+    typeof output.recordsExtracted === "number" ? output.recordsExtracted : 0;
+  const summary =
+    typeof output.summary === "string" ? output.summary : null;
+  return { outcome, recordsExtracted, summary };
+}
+
 const STATUS_DOT: Record<TaskStatus, { color: string; pulse: boolean }> = {
   running:   { color: "bg-emerald-400", pulse: true },
   completed: { color: "bg-emerald-600", pulse: false },
@@ -37,6 +48,7 @@ const STATUS_DOT: Record<TaskStatus, { color: string; pulse: boolean }> = {
 export function TaskCard({
   task,
   events,
+  mode = "testing",
 }: {
   task: {
     id: string;
@@ -50,6 +62,7 @@ export function TaskCard({
     result: unknown;
   };
   events: TaskEventWithTime[];
+  mode?: TaskMode;
 }) {
   const dot = STATUS_DOT[task.status];
   const isDone = task.status === "completed" || task.status === "failed";
@@ -59,7 +72,27 @@ export function TaskCard({
       {/* Live browser iframe, result overlay, or placeholder */}
       {isDone ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950">
-          {(() => {
+          {mode === "data-migration" ? (() => {
+            const migrationInfo = extractMigrationResultInfo(task.result);
+            const success = migrationInfo?.outcome === "success" || migrationInfo?.outcome === "partial";
+            return (
+              <>
+                {success ? (
+                  <Database className="size-10 text-primary" />
+                ) : (
+                  <XCircle className="size-10 text-red-500" />
+                )}
+                <span className="mt-2 text-sm font-bold tracking-widest uppercase text-zinc-300">
+                  {migrationInfo?.recordsExtracted ?? 0} record{(migrationInfo?.recordsExtracted ?? 0) !== 1 ? "s" : ""}
+                </span>
+                {migrationInfo?.summary && (
+                  <p className="mt-1.5 text-xs text-zinc-500 text-center max-w-[80%] line-clamp-2">
+                    {migrationInfo.summary}
+                  </p>
+                )}
+              </>
+            );
+          })() : (() => {
             const info = extractResultInfo(task.result);
             const passed = info?.passed ?? task.status === "completed";
             return (
@@ -129,7 +162,7 @@ export function TaskCard({
               taskTitle={task.title}
               result={task.result}
               events={events}
-              status={task.status}
+              mode={mode}
             >
               <Button
                 variant="ghost"

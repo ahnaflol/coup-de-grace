@@ -2,6 +2,7 @@
 
 import { TaskCard } from "./task-card";
 import type { TaskStatus } from "@/types";
+import type { TaskMode } from "@/lib/constants";
 import type { TaskEventWithTime } from "./execution-dashboard";
 
 function getColumns(count: number): number {
@@ -15,6 +16,7 @@ function getColumns(count: number): number {
 export function TaskGrid({
   tasks,
   logsByTaskId,
+  mode = "testing",
 }: {
   tasks: Array<{
     id: string;
@@ -28,6 +30,7 @@ export function TaskGrid({
     result: unknown;
   }>;
   logsByTaskId: Record<string, TaskEventWithTime[]>;
+  mode?: TaskMode;
 }) {
   if (tasks.length === 0) {
     return (
@@ -55,6 +58,7 @@ export function TaskGrid({
           key={task.id}
           task={task}
           events={logsByTaskId[task.id] ?? []}
+          mode={mode}
         />
       ))}
     </div>

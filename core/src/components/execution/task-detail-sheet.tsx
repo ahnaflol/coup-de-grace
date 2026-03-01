@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,9 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { ChevronLeft, ChevronRight, LayoutList, ScrollText, BarChart3 } from "lucide-react";
-import type { AgentEventType, TaskStatus } from "@/types";
+import { ChevronLeft, ChevronRight, LayoutList, ScrollText, BarChart3, Database } from "lucide-react";
+import { DataTable } from "./data-table";
+import type { AgentEventType } from "@/types";
+import type { TaskMode } from "@/lib/constants";
 import type { TaskEventWithTime } from "./execution-dashboard";
+import { isRecord, toStringRecord } from "@/lib/utils";
 
 interface StepData {
   number: number;
@@ -24,10 +27,6 @@ interface StepData {
   url?: string;
   screenshotUrl?: string | null;
   actions?: unknown[];
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
 }
 
 function extractSteps(events: TaskEventWithTime[]): StepData[] {
@@ -403,9 +402,43 @@ function StepsPanel({ steps }: { steps: StepData[] }) {
   );
 }
 
+/* ── Extracted Data Panel (data-migration mode) ── */
+
+function ExtractedDataPanel({ events }: { events: TaskEventWithTime[] }) {
+  const { rows, headers } = useMemo(() => {
+    const parsed = events
+      .filter((e) => e.type === "row_extracted" && isRecord(e.data))
+      .map((e) => {
+        const eventData = e.data as Record<string, unknown>;
+        const data = isRecord(eventData.data) ? eventData.data : {};
+        return toStringRecord(data);
+      });
+
+    const keySet = new Set<string>();
+    for (const row of parsed) {
+      for (const k of Object.keys(row)) keySet.add(k);
+    }
+    return { rows: parsed, headers: Array.from(keySet) };
+  }, [events]);
+
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-zinc-500 py-8 text-center">
+        No extracted data for this task.
+      </p>
+    );
+  }
+
+  return (
+    <div className="p-4 overflow-x-auto">
+      <DataTable headers={headers} rows={rows} />
+    </div>
+  );
+}
+
 /* ── Tab button helper ── */
 
-type TabKey = "steps" | "results" | "logs";
+type TabKey = "steps" | "results" | "logs" | "extracted-data";
 
 function TabButton({
   tabKey,
@@ -440,16 +473,17 @@ export function TaskDetailSheet({
   taskTitle,
   result,
   events,
-  status,
+  mode = "testing",
 }: {
   children: React.ReactNode;
   taskTitle: string;
   result: unknown;
   events: TaskEventWithTime[];
-  status: TaskStatus;
+  mode?: TaskMode;
 }) {
   const steps = extractSteps(events);
-  const defaultTab: TabKey = steps.length > 0 ? "steps" : "results";
+  const isDataMigration = mode === "data-migration";
+  const defaultTab: TabKey = steps.length > 0 ? "steps" : isDataMigration ? "extracted-data" : "results";
   const [tab, setTab] = useState<TabKey>(defaultTab);
 
   return (
@@ -466,10 +500,17 @@ export function TaskDetailSheet({
             <LayoutList className="h-3.5 w-3.5" />
             Steps ({steps.length})
           </TabButton>
-          <TabButton tabKey="results" activeTab={tab} onClick={setTab}>
-            <BarChart3 className="h-3.5 w-3.5" />
-            Results
-          </TabButton>
+          {isDataMigration ? (
+            <TabButton tabKey="extracted-data" activeTab={tab} onClick={setTab}>
+              <Database className="h-3.5 w-3.5" />
+              Extracted Data
+            </TabButton>
+          ) : (
+            <TabButton tabKey="results" activeTab={tab} onClick={setTab}>
+              <BarChart3 className="h-3.5 w-3.5" />
+              Results
+            </TabButton>
+          )}
           <TabButton tabKey="logs" activeTab={tab} onClick={setTab}>
             <ScrollText className="h-3.5 w-3.5" />
             Logs ({events.length})
@@ -480,6 +521,10 @@ export function TaskDetailSheet({
         <div className="flex-1 min-h-0 overflow-hidden">
           {tab === "steps" ? (
             <StepsPanel steps={steps} />
+          ) : tab === "extracted-data" ? (
+            <ScrollArea className="h-full">
+              <ExtractedDataPanel events={events} />
+            </ScrollArea>
           ) : tab === "results" ? (
             <ScrollArea className="h-full">
               <ResultsPanel result={result} />
